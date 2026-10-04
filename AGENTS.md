@@ -68,7 +68,7 @@ src/
   bench/stats.ts frame-time ring buffer → FPS / p95 / % frames
 naive/           FROZEN v0 copy (own index.html + src/), second Vite page at /naive/
 scripts/         report · memory · stress-memory · refresh-rate · interactivity · bench (.mjs)
-sounds/          supplied sound effects, not wired in (decisions D24)
+sounds/          supplied sound effects, local only (gitignored), not wired in (decisions D24)
 ```
 
 ## Rules

@@ -91,7 +91,7 @@ The brief asks for **all** design decisions to be documented. One entry per deci
 **Why:** removing an enemy mid-tick shifts array indices under the loops still iterating. Pooled mode only sets `dead = true`, and `sweepDead()` swap-removes all of them once at the end of the tick. Every loop skips `dead`. Towers store the target's `id` as well as the reference, so a recycled object is never mistaken for the old target.
 
 ### D24 — Sound: files supplied, not wired in
-The user added 21 sound files (`sounds/`). An audio manager was prototyped:
+The user added 21 sound files (`sounds/`, kept locally and gitignored, not in the repo). An audio manager was prototyped:
 - Web Audio buffers
 - sounds driven by per-tick event counters read once per frame
 - a per-sound minimum gap so 50 guns don't make 50 voices

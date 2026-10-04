@@ -20,5 +20,5 @@ Build order and timings come from [PLAN.md §5](PLAN.md#5-build-order-do-it-in-t
 ## Known gaps
 
 - **All numbers come from headless Chrome.** The video re-derives them live in desktop Chrome on the deployed URLs.
-- **Sound files are in `sounds/` but not wired in** (user's call). The audio manager design is in D24 if it's wanted later.
+- **Sound files are kept locally in `sounds/` (gitignored) and not wired in** (user's call). The audio manager design is in D24 if it's wanted later.
 - **SoA typed arrays were not implemented** (D19).

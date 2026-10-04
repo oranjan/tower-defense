@@ -1,7 +1,33 @@
-node_modules
-dist
-.vercel
-.DS_Store
+# dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+*.local
 
-# local only
+# deploy / tooling state
+.vercel/
+.netlify/
+.cache/
+coverage/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files
+.env
+.env.*
+
+# editors & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# local only (kept on disk, not in the repo)
 docs/video-script.md
+sounds/
