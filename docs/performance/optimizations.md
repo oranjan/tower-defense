@@ -1,54 +1,55 @@
 # Optimisations
 
-Each optimisation gets **its own commit**, is measured before and after on the same scenario ([measurement.md](measurement.md)), and adds rows to [NUMBERS.md](../../NUMBERS.md). Where possible it sits behind a **runtime toggle** in the stats/stress panel, so the video can flip it live.
+All six live in the final build behind **runtime toggles** (`src/flags.ts`). You can flip them in the **Optimisations** panel, or use `?naive=1` (all off) or `?off=grid,sprites,…`. The stats panel's first line shows which are on, e.g. `v1 [GPTSBC]`. With every flag off, the code takes the v0 paths: scan-everything, `new` + `splice`, per-entity canvas state, full redraws. The frozen v0 itself is also served at `/naive/`.
 
-Status: ☐ planned · ⏳ in progress · ✅ done (link the commit)
+Measured results are in [NUMBERS.md](../../NUMBERS.md). Commit `bc7a7d7` adds the toggles.
 
-| # | Optimisation | Fixes ([bottlenecks.md](bottlenecks.md)) | Toggle | Scenario | Status |
+| # | Optimisation | Flag | Fixes ([bottlenecks.md](bottlenecks.md)) | Effect at 5000/100/1000 | Status |
 |---|---|---|---|---|---|
-| 1 | Spatial grid for targeting, collision, splash and frost | Sim 1–3 | `useGrid` | S1 → S2 | ☐ |
-| 2 | Object pools + swap-remove (no `new`, no `splice`) | Sim 5–6 | `usePool` | S1, heap graph | ☐ |
-| 3 | SoA typed arrays for enemies and projectiles, cached path segment | Sim 4, 7 | build-level (v0 URL vs final URL) | S2 | ☐ |
-| 4 | Pre-rendered sprites, batched by type; no save/restore, shadowBlur or text | Render 1–5 | `useSprites` | S2 | ☐ |
-| 5 | Static background canvas + HUD updates only on change at ≤10 Hz | Render 6, 8 | `useBgCache` | S2 | ☐ |
-| 6 | Viewport culling against `Camera.visible()` | Render 7 | `useCulling` | S2 zoomed in to 3× | ☐ |
-| 7 | Towers query only when the cooldown is ready, and keep their target until it dies or leaves range | Sim 1 | `useTargetCache` | S2 with 200 towers | ☐ |
+| 1 | Spatial grid for targeting, collision, splash and frost | `useGrid` (G) | Sim 1–3 | sim **54.8 → 1.2 ms**, FPS 14.9 → 54.2 | ✅ |
+| 2 | Object pools + swap-remove + deferred enemy removal + particle cap | `usePool` (P) | Sim 5–6 | 50-wave heap peak **7.4 → 5.0 MB**; at the ceiling, turning it off drops ≥45 FPS from 100% to 86.8% | ✅ |
+| 3 | Target caching: keep the target, only search when ready to fire | `useTargetCache` (T) | Sim 1 | sim **1.01 → 0.60 ms** (−40%); ≥45 FPS 91.7% → 96.2% | ✅ |
+| 4 | Sprite atlas + batching: one `drawImage` per entity, batched HP bars, no save/restore, shadowBlur or text | `useSprites` (S) | Render 1–5 | render **10.9 → 1.9 ms**; ≥45 FPS 96.2% → **100%** | ✅ |
+| 5 | Static background canvas + HUD diffed and throttled to 10 Hz | `useBgCache` (B) | Render 6, 8 | render 4.07 → 1.10 ms at 2000/50/500, with S | ✅ |
+| 6 | Viewport culling against the camera rect | `useCulling` (C) | Render 7 | at 3× zoom: drawn 6,100 → ~1,700, render **2.26 → 1.33 ms** | ✅ |
+| — | Struct-of-Arrays typed arrays | — | Sim 4, 7 | **Not done:** after 1–3, sim is 0.46 ms (3% of the frame), so there is nothing left to win ([decisions.md D19](../decisions.md)) | ✗ skipped |
 
-## Design notes
+## Why does the grid look like it does all the work?
 
-### 1. Spatial grid
-- 64 px cells over the world, plus a margin. `cellStart: Int32Array(cells + 1)` and `items: Int32Array(cap)`.
-- `rebuild()` every tick is a counting sort: count per cell → prefix sum → scatter. O(E), no allocation.
-- `queryCircle(x, y, r, visit)` walks only the overlapping cells. With E spread over about 60 road tiles, a 140 px query touches about 9 cells instead of all 5000 enemies.
-- Used by tower targeting, bullet collision, cannon splash and frost pulses: one structure, four beneficiaries.
+1. **Diminishing returns.** The grid removes 98% of sim time (54.8 → 1.2 ms). Everything after it works on what's left, so the absolute gains look small even when the relative gain is large (target caching: −40% sim).
+2. **Stress mode hides pooling.** Stress enemies are immortal, so nothing dies and little is allocated. Pooling matters in real play: see the 50-wave memory table in NUMBERS.md.
+3. **Two walls, not one.** The grid fixes the sim wall. Sprite batching fixes the render wall, and it's what takes the required scenario from 89–96% to 100% of frames at ≥45 FPS.
+4. **The ablation table** in [NUMBERS.md §3](../../NUMBERS.md#3-ablation-near-the-ceiling-each-optimisation-switched-off-on-its-own) switches each one off with everything else on, at 12000/200/3000. Removing the grid, pools, target caching or sprites each breaks the 95% requirement.
 
-### 2. Pools
-- Free-list stack (`Int32Array`) plus a dense alive list with swap-remove. Release is O(1); nothing is ever `splice`d.
-- Particles get a hard cap (e.g. 2,000). When full, the oldest is overwritten. Hit sparks are off in stress mode.
-- Expect `>33 ms` to drop (no GC pauses) and the heap graph to go flat instead of a sawtooth.
+## How each one works
 
-### 3. Structure of Arrays
-- Enemies: `x, y, s, hp, maxHp, speed, slowUntil, slowMul : Float32Array`; `kind, flags : Uint8Array`; `seg : Int32Array`. Capacity 16,384.
-- Projectiles: `x, y, vx, vy, dmg, ttl, tx, ty, splash : Float32Array`; `kind : Uint8Array`. Capacity 8,192.
-- `seg` caches the path segment, so `pointAt` advances forward instead of scanning from 0.
-- Not toggleable at runtime (it changes the data model), so it's measured build vs build.
+### 1. Spatial grid (`src/grid.ts`)
+- **Layout:** 64 px cells over the world plus a 2-cell margin. `cellStart: Int32Array(cells + 1)` and `items: Enemy[]` (preallocated, 16,384 slots).
+- **`rebuild()` every tick** is a counting sort: count per cell → prefix sum → scatter. O(E), no allocation.
+- **`query(x, y, r, out)`** copies only the items in the cells overlapping the circle's bounding box. The row-major counting-sort order means one contiguous slice per row of cells. Callers do the exact distance test.
+- **Users:** tower targeting, bullet collision (radius = biggest enemy + 3), cannon splash and frost pulses all go through it. A 140 px query touches about 9 cells instead of 5,000 enemies.
+- **Object references, not indices:** the grid stores references, so killing an enemy mid-tick can't invalidate it. Callers skip `dead` enemies.
 
-### 4. Sprites and batching
-- At startup, each enemy type (normal and hit-flash), projectile type and tower base is drawn once into an offscreen canvas, with the glow baked in.
-- Per frame: for each type, set nothing and loop `drawImage(sprite, x − r, y − r)`. HP bars go in two passes (red, then green).
-- **Checkpoint:** if S2 render time is still above ~12 ms after this, apply the PixiJS fallback ([decisions.md D2](../decisions.md#d2--canvas-2d-no-game-engine)).
+### 2. Pools (`Game.newEnemy / newProjectile / addParticle / remove*`)
+- **Reuse:** `Enemy`, `Projectile` and `Particle` have `init()` methods and are reused from free lists. Every field is set in the constructor, so shapes stay monomorphic.
+- **Removal:** swap-remove (`arr[i] = arr[last]; arr.pop()`) is O(1), instead of `splice`, which is O(n).
+- **Kills mid-tick** only set `dead = true`. A single `sweepDead()` at the end of the tick removes them, so no `indexOf` + `splice` per kill.
+- **Particle cap:** particles are capped at 2,500, and new ones are dropped when full.
+- **Pool-off path:** `new` + `splice` exactly as v0.
 
-### 5. Static background + HUD
-- The map is drawn once into `#bg`, redrawn only when the camera changes zoom or pan, or on resize.
-- The HUD caches the last value of each field and writes `textContent` only on change, at most 10 times a second.
+### 3. Target caching (`Game.updateTower`)
+A tower keeps its current target while it is alive (checked by `id`, so a recycled pooled object can't be mistaken for the old target) and in range. It only searches when the cooldown is ready and it has no valid target. 100–200 towers × 60 Hz of searches becomes a few per shot.
+
+### 4. Sprites and batching (`src/sprites.ts`, `Renderer.fast*`)
+- **Atlas:** one offscreen atlas canvas, drawn once at startup at 4× resolution. It holds each enemy type in three looks (normal, slowed, hit-flash), with glow, armor ring and letter baked in, plus the bullet, the shell and the 4 tower bases.
+- **Entities:** each enemy, projectile or tower body is one `drawImage` from that single image, so Chrome can batch them.
+- **HP bars:** two paths per frame (all backgrounds, then all fills), and skipped entirely below 0.5 scale.
+- **Turrets:** rotated with a computed `setTransform` instead of `save/translate/rotate/restore`.
+- **Dot particles:** `fillRect`, with `fillStyle` set only when the colour changes.
+
+### 5. Background cache + HUD throttle
+- **Map:** drawn onto `#bg` (an opaque context) only when `Camera.changedSince()` reports a pan, zoom, resize or shake. `#fg` is cleared to transparent each frame.
+- **HUD and panels:** update at most every 100 ms, and write to the DOM only when a string actually changed (`UI.html()` / `UI.text()`). The naive path rewrites `innerHTML` every frame.
 
 ### 6. Viewport culling
-- One AABB test per entity against the visible rect, plus a margin of the largest radius. Skipped entities cost a compare, not a draw.
-- Demo: S2, zoom to 3×, toggle off and on. Render ms should drop roughly in proportion to the visible area.
-
-### 7. Target caching
-- If the cached target is alive and still in range, keep it. Only search (through the grid) when the cooldown is ready and there's no valid target.
-
-## Results
-
-Fill in after each optimisation, then copy the summary into [NUMBERS.md](../../NUMBERS.md).
+`Camera.visible()` plus a 40 px margin (largest sprite + glow) gives a world rect. Every draw loop skips entities outside it, so render cost follows what's on screen. Demo: stress 5000/100/1000, zoom in with the mouse wheel, toggle **Viewport culling** and watch `drawn` and `render`.

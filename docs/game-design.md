@@ -35,10 +35,11 @@ Base HP is multiplied by `hpMul(wave)`. **Damage per hit:** `max(1, dmg − armo
 
 | Formula | Value |
 |---|---|
-| `hpMul(n) = 1 + 0.10n + 0.004n²` | wave 1 ×1.1, wave 25 ×6, wave 50 ×16 |
-| `budget(n) = 15 + 6n + 0.25n²` | Points spent on enemies (Runner 1, Swarm 0.35, Tank 5, Shielded 3.5) |
+| `hpMul(n) = 1 + 0.2n + 0.025n²` | wave 1 ×1.2, wave 25 ×21, wave 50 ×74 |
+| `budget(n) = 15 + 7n + 0.3n²` | Points spent on enemies (Runner 1, Swarm 0.35, Tank 5, Shielded 3.5) |
 | `spawnGap(n) = max(0.12, 0.6 − 0.01n)` s | Gap between enemies in a group (Swarm bursts use 0.08 s) |
 | `waveBonus(n) = 25 + 5n` | Gold and score when a wave finishes spawning |
+| `rewardMul(n) = 1 / (1 + 0.04n)` | Kill gold shrinks as waves grow (×0.5 at wave 25, ×0.33 at wave 50); score is unaffected |
 
 - **Unlocks:** Runner from wave 1, Swarm from 3, Tank from 6, Shielded from 9. A newly unlocked type gets 3× pick weight for 3 waves.
 - **Boss waves** (every 10th) spend only 60% of the budget on normal enemies, and the Boss arrives last.
@@ -49,7 +50,7 @@ Base HP is multiplied by `hpMul(wave)`. **Damage per hit:** `max(1, dmg − armo
 ## Economy and scoring
 
 - Start with **220 gold** and **20 lives**.
-- A kill gives its reward in gold, plus reward × 10 to score. Wave bonuses and early-call bonuses add to both.
+- A kill gives `reward × rewardMul(wave)` gold (at least 1), plus reward × 10 to score. Wave bonuses and early-call bonuses add to both.
 - **Victory:** wave 50 has finished spawning and no enemies remain. Leftover gold is added to the score.
 - **Game over:** lives reach 0.
 
@@ -70,4 +71,11 @@ Base HP is multiplied by `hpMul(wave)`. **Damage per hit:** `max(1, dmg − armo
 
 ## Balance status
 
-Not tuned yet (Step 5 in [PLAN.md](PLAN.md)). Aim: a casual build survives to about wave 30, and Frost + Cannon synergy plus Snipers are needed for the bosses.
+Tuned with a scripted bot that builds on the best road-coverage tiles and upgrades with spare gold ([decisions.md D22](decisions.md)):
+
+| Strategy | Result |
+|---|---|
+| Gun-heavy rotation (Gun, Gun, Frost, Cannon, Gun, Sniper, Cannon, Frost), 50% upgrade bias | Game over on **wave 47** |
+| Sniper/Cannon-heavy rotation, 70% upgrade bias | **Victory**, 20/20 lives |
+
+The first boss (wave 10) and the wave-20 boss are the first real checks. Guns alone stop working once Shielded enemies arrive (armor 6) and HP passes ×10.

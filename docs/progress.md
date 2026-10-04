@@ -4,18 +4,19 @@ Build order and timings come from [PLAN.md §5](PLAN.md#5-build-order-do-it-in-t
 
 | Step | Planned | Status | Notes |
 |---|---|---|---|
-| 0. Plan | 09:00–13:10 | ✅ done 13:10 | [PLAN.md](PLAN.md) |
-| 1. Skeleton + stats panel | 13:15–13:35 | ✅ done ~13:20 | Vite + TS, fixed-step loop, frame-stats ring buffer, on-screen panel |
-| 2. Naive playable game | 13:35–14:50 | ✅ done ~13:25 | All gameplay requirements, written naively on purpose |
-| 3. Stress mode + "before" numbers + naive deploy | 14:50–15:10 | ✅ done ~13:35 | Tag `v0-naive`, live at https://td-naive.vercel.app, numbers in [NUMBERS.md](../NUMBERS.md) |
-| 3b. Documentation structure | — | ✅ done | README, AGENTS.md, docs/ |
-| 4. Optimisations, each measured | 15:10–16:05 | ⏳ next | Order and toggles in [optimizations.md](performance/optimizations.md) |
-| 5. Polish + balance pass | 16:05–16:25 | ☐ | Effects pooling, balance for waves 1–50 |
-| 6. README/NUMBERS final + deploy final | 16:25–16:45 | ☐ | Project `td-final` |
-| 7. Video + submit | 16:45–17:00 | ☐ | [video-script.md](video-script.md), form link in [PLAN.md](PLAN.md) |
+| 0. Plan | 09:00–13:10 | ✅ 13:10 | [PLAN.md](PLAN.md) |
+| 1. Skeleton + stats panel | 13:15–13:35 | ✅ ~13:20 | Vite + TS, fixed-step loop, frame-stats ring buffer, on-screen panel |
+| 2. Naive playable game | 13:35–14:50 | ✅ ~13:25 | All gameplay requirements, written naively on purpose |
+| 3. Stress mode + "before" numbers + naive deploy | 14:50–15:10 | ✅ ~13:35 | Tag `v0-naive`; https://td-naive.vercel.app |
+| 3b. Documentation structure | — | ✅ | README, AGENTS.md, docs/ |
+| 4. Optimisations, each measured | 15:10–16:05 | ✅ ~15:10 | 6 live toggles; SoA skipped on evidence (D19). [optimizations.md](performance/optimizations.md) |
+| 4b. Frozen naive copy at `/naive/` | — | ✅ | `naive/` folder, second Vite page (D21) |
+| 5. Polish + balance | 16:05–16:25 | ✅ ~15:20 | Balance tuned with a scripted bot (D22). Live "FPS now". Stress HUD shows the scenario. Sound skipped at the user's request (D24) |
+| 6. NUMBERS/README/docs + final deploy | 16:25–16:45 | ✅ ~15:30 | https://td-final-eight.vercel.app (+ `/naive/`); `npm run report` / `npm run memory` |
+| 7. Video + submit | 16:45–17:00 | ☐ user | [video-script.md](video-script.md); form link in [PLAN.md](PLAN.md) |
 
 ## Known gaps
 
-- **Balance is untuned.** In a fast-forwarded run with unlimited gold, all waves spawned and ran with no errors. A normal economy has not been play-tested past wave 1.
-- **Numbers so far come from headless Chrome.** Real desktop Chrome numbers are still needed for NUMBERS.md and the video.
-- **The `#bg` canvas exists but is unused.** It is reserved for the static-background optimisation.
+- **All numbers come from headless Chrome.** The video re-derives them live in desktop Chrome on the deployed URLs.
+- **Sound files are in `sounds/` but not wired in** (user's call). The audio manager design is in D24 if it's wanted later.
+- **SoA typed arrays were not implemented** (D19).

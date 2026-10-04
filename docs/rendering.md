@@ -4,7 +4,7 @@
 
 | Layer | Element | Contents |
 |---|---|---|
-| Background | `canvas#bg` | Reserved for the cached static map (optimisation 5). Unused in v0 |
+| Background | `canvas#bg` | The static map, redrawn only when the camera changes (`useBgCache`). Unused in v0 |
 | World | `canvas#fg` | Map, towers, enemies, projectiles, particles, range rings, build ghost, wave banner |
 | UI | DOM (`#hud`, `#side`, `.overlay`, `#stats`) | Text, buttons and sliders. The browser lays out text better than canvas `fillText`, and the DOM only changes when values change |
 
@@ -26,14 +26,14 @@ The UI also rebuilds the HUD with `innerHTML` every frame.
 
 Why this is slow, and how much each part costs, is covered in [performance/bottlenecks.md](performance/bottlenecks.md).
 
-## Planned optimised frame
+## Optimised frame (`src/render.ts` `fast*` + `src/sprites.ts`)
 
-Details and status are in [performance/optimizations.md](performance/optimizations.md).
+All implemented behind flags. Details and numbers are in [performance/optimizations.md](performance/optimizations.md). The naive methods are still in `render.ts` (`naive*`) for when a flag is off.
 
 1. **Static map cached in `#bg`:** drawn once, redrawn only on resize or zoom.
-2. **Pre-rendered sprites:** one offscreen canvas per enemy type and state (normal, flash), with the glow baked in. Each entity is then a single `drawImage`.
-3. **Batch by type:** set the state once, loop over that type's entities. No `save/restore`, no `shadowBlur` and no text in the hot path.
+2. **Sprite atlas:** one offscreen canvas (4× resolution) holding every enemy type × {normal, slowed, flash}, the bullet, the shell and the tower bases, glow baked in. Each entity is a single `drawImage` from that one image.
+3. **No per-entity state:** no `save/restore`, no `shadowBlur`, no text in the hot path. Turrets rotate via a computed `setTransform`.
 4. **HP bars in two passes:** all red rects, then all green rects (2 `fillStyle` changes per frame). Skipped entirely when zoomed out past readability.
 5. **Viewport culling:** skip any entity whose bounding box is outside `Camera.visible()`.
 6. **HUD:** write text only when a value changes, at most 10 Hz.
-7. **Fallback** if Canvas 2D can't hold 45 FPS at 5k sprites: swap only the renderer for PixiJS `ParticleContainer` (see [decisions.md](decisions.md)).
+7. **Not needed:** the PixiJS fallback. Canvas 2D holds 60 FPS at 5k (render 1.9 ms) and reaches 12k before failing (see [NUMBERS.md](../NUMBERS.md)).

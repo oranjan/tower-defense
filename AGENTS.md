@@ -20,7 +20,7 @@ The grading is less about having a game than about **showing the naive build bre
 | [docs/decisions.md](docs/decisions.md) | Every design decision with the reason and the alternatives rejected. **Add an entry for every new decision** |
 | [docs/performance/measurement.md](docs/performance/measurement.md) | Stats panel metric definitions, stress mode rules, benchmark protocol, `npm run bench` |
 | [docs/performance/bottlenecks.md](docs/performance/bottlenecks.md) | Where the naive build spends its time, with numbers |
-| [docs/performance/optimizations.md](docs/performance/optimizations.md) | Planned and finished optimisations, their toggles and status |
+| [docs/performance/optimizations.md](docs/performance/optimizations.md) | What each optimisation does, its flag and its measured effect |
 | [NUMBERS.md](NUMBERS.md) | The before/after table. **Required by the brief, must stay at repo root** |
 | [docs/deployment.md](docs/deployment.md) | Vercel projects, URLs, deploy commands, CLI workaround |
 | [docs/video-script.md](docs/video-script.md) | The demo video script and its mandatory beats |
@@ -28,12 +28,22 @@ The grading is less about having a game than about **showing the naive build bre
 ## Commands
 
 ```bash
-npm run dev                      # Vite dev server
-npm run build                    # tsc type-check + production build to dist/
-npm run bench -- <url> E,T,P …   # headless stress benchmark, prints NUMBERS.md rows
+npm run dev                          # Vite dev server (final at /, naive at /naive/)
+npm run build                        # tsc type-check + production build of both pages to dist/
+npx vite preview --port 4317         # serve dist/ for measurement
+npm run report -- <url>              # every NUMBERS.md table (headless Chrome)
+npm run memory -- <url> [nopool]     # 50-wave heap run
+npm run bench -- <url> E,T,P …       # quick rows
 ```
 
-Quick stress from the URL: `?stress=5000,100,1000`. In the console, `game` is the live `Game` instance and `statsRow()` returns the current stats as a markdown row.
+**URL params:**
+- `?stress=E,T,P` starts a stress test
+- `?naive=1` turns every optimisation off
+- `?off=grid,pool,target,sprites,bg,culling` turns specific ones off
+
+**Console globals:** `game`, `flags`, `cam`, `ui`, `statsRow()`, `resetStats()`.
+
+**Live:** https://td-final-eight.vercel.app (and `/naive/`) · https://td-naive.vercel.app
 
 ## Code map
 
@@ -41,23 +51,28 @@ Quick stress from the URL: `?stress=5000,100,1000`. In the console, `game` is th
 src/
   main.ts        bootstrap, input, stats panel, wiring
   loop.ts        single rAF loop, fixed 1/60 s simulation step
-  game.ts        all simulation: entities, waves, combat, economy, stress mode
-  render.ts      canvas renderer
-  ui.ts          DOM HUD, shop, tower panel, stress sliders, overlays
-  camera.ts      pan/zoom, world↔screen, visible rect
+  flags.ts       runtime optimisation toggles (G P T S B C)
+  game.ts        simulation: entities, pools, waves, combat, economy, stress mode, event counters
+  grid.ts        spatial grid (counting sort)
+  render.ts      canvas renderer: fast* paths and naive* paths
+  sprites.ts     sprite atlas
+  ui.ts          DOM HUD, shop, tower panel, optimisation toggles, stress sliders, overlays
+  camera.ts      pan/zoom, world↔screen, visible rect, change detection
   map.ts         path polyline, tile kinds, pointAt(s)
-  waves.ts       50-wave generator
+  waves.ts       50-wave generator + difficulty/reward curves
   config.ts      every balance number and world constant
   rng.ts         seeded mulberry32
   bench/stats.ts frame-time ring buffer → FPS / p95 / % frames
-scripts/bench.mjs  headless benchmark (puppeteer-core + local Chrome)
+naive/           FROZEN v0 copy (own index.html + src/), second Vite page at /naive/
+scripts/         report.mjs · memory.mjs · bench.mjs
+sounds/          supplied sound effects, not wired in (decisions D24)
 ```
 
 ## Rules
 
 1. **Git identity.** Commit as `oranjan <rnjnmhta@gmail.com>` with all four `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars set inline. **No Claude/AI attribution** in commits or PRs. Short, human commit messages. Check `git log -1` after committing.
-2. **The `v0-naive` tag is frozen.** It is the deployed baseline the video breaks. Never "fix" its slowness. Optimisations go on top, behind runtime toggles where possible ([optimizations.md](docs/performance/optimizations.md)).
-3. **One optimisation per commit**, measured before and after with the same scenario ([measurement.md](docs/performance/measurement.md)). Paste the rows into [NUMBERS.md](NUMBERS.md).
+2. **`naive/` and the `v0-naive` tag are frozen.** They are the baseline the video breaks. Never "fix" their slowness; only measurement or display hooks may change there (D21). New optimisations go in `src/` behind a flag in `flags.ts` ([optimizations.md](docs/performance/optimizations.md)).
+3. **Measure every performance change** with `npm run report` on a production build ([measurement.md](docs/performance/measurement.md)) and update [NUMBERS.md](NUMBERS.md).
 4. **No allocation in the hot loop** in optimised code paths: no `new`, closures, `splice`, array spreads or string building per entity per frame.
 5. **Simulation never reads wall-clock time.** It only advances through `Game.update(STEP)`. Rendering must not mutate game state.
 6. **Balance numbers live in `src/config.ts`** (and wave formulas in `src/waves.ts`). Never hard-code them elsewhere.

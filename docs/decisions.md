@@ -64,3 +64,37 @@ The brief asks for **all** design decisions to be documented. One entry per deci
 
 ### D18 — Headless benchmark script alongside the in-game panel
 **Why:** `npm run bench` gives repeatable numbers without touching the browser, which is handy for regression checks between commits. The **reported** numbers still come from desktop Chrome, because headless Chrome has no vsync and a different GPU path ([measurement.md](performance/measurement.md)).
+
+### D19 — Struct-of-Arrays (typed arrays) skipped, on evidence
+**Plan said:** move enemies and projectiles into `Float32Array` columns for cache locality.
+**Measured:** after the grid, pools and target caching, simulation at 5000/100/1000 is **0.46 ms per frame**, about 3% of a 16.7 ms frame. Even at the ceiling (12000/200/3000) sim is 2.6 ms against 10.4 ms of render. A full data-model rewrite would carry real bug risk, and the most it could save is a fraction of a millisecond.
+**Decision:** keep monomorphic pooled class instances (every field initialised in the constructor, reused through `init()`). If the ceiling ever needs to rise, the next lever is render (WebGL, see D2), not data layout.
+
+### D20 — Optimisations as runtime toggles in one build
+**Why:** the brief wants before/after *in action* for each optimisation. Toggles (`src/flags.ts`, the Optimisations panel, `?naive=1`, `?off=…`) let the video flip each one live on the same deployed page, on the same scenario. With all flags off, the code takes the v0 paths: same algorithms, `new` + `splice`, per-entity canvas state.
+**Cost:** a branch per hot loop (negligible), and the naive paths stay in the codebase.
+
+### D21 — Frozen naive copy in `naive/`, built as a second page
+**Why:** the user wanted the old game kept in its own folder. `naive/` holds the v0 source (tag `v0-naive`) and is built by Vite as a second page, so every deploy of the final build also serves the untouched baseline at `/naive/`. The `td-naive` project serves the same folder on its own URL.
+**Rule:** only measurement and display changes may touch `naive/`: the "FPS now" line, the `resetStats` hook, and the overlay fix for `?stress=` links. Never performance changes.
+
+### D22 — Balance tuned with a scripted bot
+**Why:** "sensible game balance" needs evidence, and there wasn't time for hours of play-testing. A headless bot builds on the best road-coverage tiles in a fixed rotation and upgrades with spare gold. It plays the whole game fast-forwarded in fixed steps.
+**Findings:** the first curve let the bot win every wave without losing a life, and enemies never got past 60% of the road. That was because kill income scaled with enemy count. Changes:
+- `hpMul` raised to `1 + 0.2n + 0.025n²` (wave 50 is ×74)
+- `budget` raised to `15 + 7n + 0.3n²`
+- kill rewards now shrink with `rewardMul(n) = 1 / (1 + 0.04n)`
+
+**Result:** a Gun-heavy bot dies on wave 47. A Sniper/Cannon-heavy bot with more upgrades wins with all lives. Strategy decides the outcome.
+
+### D23 — Kills during a tick are deferred (pooled mode)
+**Why:** removing an enemy mid-tick shifts array indices under the loops still iterating. Pooled mode only sets `dead = true`, and `sweepDead()` swap-removes all of them once at the end of the tick. Every loop skips `dead`. Towers store the target's `id` as well as the reference, so a recycled object is never mistaken for the old target.
+
+### D24 — Sound: files supplied, not wired in
+The user added 21 sound files (`sounds/`). An audio manager was prototyped:
+- Web Audio buffers
+- sounds driven by per-tick event counters read once per frame
+- a per-sound minimum gap so 50 guns don't make 50 voices
+- muted during stress tests
+
+The user then chose to leave sound out. The `Game.events` counters remain, so wiring it back in is a small change.

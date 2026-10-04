@@ -4,40 +4,47 @@
 
 | Build | URL | Vercel project | Source |
 |---|---|---|---|
-| Naive baseline | https://td-naive.vercel.app | `td-naive` (prj_GY8RX26LcivDmV6MgWGIStv2xQeH) | tag `v0-naive` |
-| Final | _not deployed yet_ | `td-final` (to create) | `main` |
+| **Final** (optimised, live toggles) | **https://td-final-eight.vercel.app** | `td-final` (prj_iHK7NBpAXXwwwFeRZ1Waaiobz8V1) | `main`, `npm run build` → `dist/` |
+| Naive baseline (same deploy) | https://td-final-eight.vercel.app/naive/ | `td-final` | `naive/` folder |
+| Naive baseline (own project) | https://td-naive.vercel.app | `td-naive` (prj_GY8RX26LcivDmV6MgWGIStv2xQeH) | `naive/` folder built standalone |
 
-Both are static builds, with no server or external services. The game runs entirely in the browser.
+Note: `td-final.vercel.app` belongs to someone else, which is why Vercel assigned `td-final-eight`. A custom `*.vercel.app` alias set by hand came up behind Vercel deployment protection (302 to login), so it was removed. Use the URLs above.
+
+Handy links for the demo:
+- `https://td-final-eight.vercel.app/?stress=5000,100,1000`: the required scenario, all optimisations on
+- `https://td-final-eight.vercel.app/?stress=5000,100,1000&naive=1`: same build, all optimisations off
+- `https://td-naive.vercel.app/?stress=5000,100,1000`: frozen v0
+
+Both builds are static, with no server or external services.
 
 ## Accounts
 
-- **Vercel:** the personal `oranjan` account, team scope `ranjanmehta17s-projects` (`team_Uq28qt16AbJa7U4F5oX1uJTv`). Run `vercel whoami` before every deploy. If it isn't `oranjan`, stop and have the user run `vercel login`.
+- **Vercel:** the personal `oranjan` account, team scope `ranjanmehta17s-projects` (`team_Uq28qt16AbJa7U4F5oX1uJTv`). Run `vercel whoami` before every deploy.
 - **Git:** commit as `oranjan <rnjnmhta@gmail.com>` with no AI attribution (see [AGENTS.md](../AGENTS.md#rules)).
 
-## Deploying a build
+## Deploying
 
-Vercel CLI 50.17.1 ignores `--scope` in non-interactive mode (`"reason": "missing_scope"`), so deploy with explicit IDs:
+Vercel CLI 50.17.1 ignores `--scope` in non-interactive mode (`"reason": "missing_scope"`), so deploy prebuilt static files with explicit IDs.
 
 ```bash
-# 1. Build the exact commit/tag in a clean copy
-git archive <tag-or-branch> | tar -x -C /tmp/td-build && cd /tmp/td-build
-npm ci && npm run build
+ORG=team_Uq28qt16AbJa7U4F5oX1uJTv
 
-# 2. Put the static output in a folder named after the project
-mkdir -p /tmp/deploy/<project> && cp -R dist/. /tmp/deploy/<project>/ && cd /tmp/deploy/<project>
+# Final (includes /naive/)
+npm run build
+rm -rf /tmp/deploy/td-final && mkdir -p /tmp/deploy/td-final && cp -R dist/. /tmp/deploy/td-final/
+cd /tmp/deploy/td-final && VERCEL_ORG_ID=$ORG VERCEL_PROJECT_ID=prj_iHK7NBpAXXwwwFeRZ1Waaiobz8V1 vercel deploy --prod --yes
 
-# 3. First time only: create the project
-vercel project add <project> --scope ranjanmehta17s-projects
-
-# 4. Deploy to production
-VERCEL_ORG_ID=team_Uq28qt16AbJa7U4F5oX1uJTv VERCEL_PROJECT_ID=<prj_…> vercel deploy --prod --yes
+# Naive on its own project (build the naive/ folder as a standalone site; run from inside it so the root vite.config isn't used)
+cd naive && npx vite build --outDir /tmp/deploy/td-naive --emptyOutDir
+cd /tmp/deploy/td-naive && VERCEL_ORG_ID=$ORG VERCEL_PROJECT_ID=prj_GY8RX26LcivDmV6MgWGIStv2xQeH vercel deploy --prod --yes
 ```
 
-Get a project's ID with `vercel api "/v9/projects/<project>?teamId=team_Uq28qt16AbJa7U4F5oX1uJTv"`.
+**New project:** create it with `vercel project add <name> --scope ranjanmehta17s-projects`, then read its ID with `vercel api "/v9/projects/<name>?teamId=$ORG"`.
 
 ## Check after deploy
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://<project>.vercel.app/   # 200
-npm run bench -- https://<project>.vercel.app/ 2000,50,500 5000,100,1000
+curl -s https://td-final-eight.vercel.app/ | grep -o '<title>[^<]*'          # Tower Defense
+curl -s https://td-final-eight.vercel.app/naive/ | grep -o '<title>[^<]*'    # Tower Defense (naive v0)
+npm run bench -- https://td-final-eight.vercel.app/ 5000,100,1000
 ```

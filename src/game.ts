@@ -14,6 +14,7 @@ export type Phase = 'menu' | 'playing' | 'victory' | 'gameover';
 
 export const MAX_ENEMIES = 16384;
 export const MAX_PARTICLES = 2500; // pooled mode only
+export const STRESS_WAVE = 25; // stress-mode enemies use this wave's HP
 const MAX_RADIUS = Math.max(...ENEMIES.map((e) => e.radius));
 
 let nextId = 1;
@@ -663,7 +664,7 @@ export class Game {
   setStress(cfg: StressConfig) {
     if (!this.stress) return;
     this.stress = { ...cfg };
-    const scale = hpMul(25);
+    const scale = hpMul(STRESS_WAVE);
     while (this.enemies.length > cfg.enemies) this.removeEnemyAt(this.enemies.length - 1);
     while (this.enemies.length < cfg.enemies && this.enemies.length < MAX_ENEMIES) {
       this.spawnEnemy(this.enemies.length % 4, scale, this.rng() * PATH_LEN);

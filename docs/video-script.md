@@ -4,26 +4,33 @@
 
 - 2–5 minutes, ideally 3–4. **Face on camera**, spoken in **English**, recorded with Loom or similar while using the **deployed** links.
 - Show all three:
-  1. The **breaking point of the naive build**: the E/T/P counts where FPS drops, *shown* in the browser, not just told.
+  1. **The breaking point of the naive build**, shown in the browser.
   2. **How it was optimised.**
-  3. **The final ceiling**, i.e. the delta.
-- **In the first 30 s:** the first optimisation, before and after, *in action* (not just numbers).
-- **For every optimisation:** before/after numbers derived live in the video. The same table goes in [NUMBERS.md](../NUMBERS.md).
+  3. **The final ceiling.**
+- **In the first 30 s:** the first optimisation, before and after, *in action*.
+- **For every optimisation:** before/after numbers derived live. The same tables are in [NUMBERS.md](../NUMBERS.md).
 
-## Script (target 3:30)
+## Tabs to open before recording
 
-| Time | On screen | Say |
+1. https://td-naive.vercel.app/?stress=2000,50,500 (naive)
+2. https://td-final-eight.vercel.app/?stress=5000,100,1000 (final; the Optimisations panel is in the right sidebar)
+3. [NUMBERS.md](../NUMBERS.md) on GitHub, as a fallback
+
+The stats panel (top-left) shows `FPS now`, `FPS avg`, `≥45 FPS %` and `>33 ms %` (the two numbers the brief grades), plus `sim` and `render` ms.
+
+## Script (target ≈ 3:30)
+
+| Time | On screen | Say (roughly) |
 |---|---|---|
-| 0:00–0:30 | Naive URL at S1 stuttering, then the final URL at the same S1 running smoothly (or flip `useGrid` off/on live). Point at the stats panel. | "This is the same 2,000 enemies. Before: X FPS, Y % of frames over 33 ms. After a spatial grid: …" |
-| 0:30–1:15 | https://td-naive.vercel.app, raise the sliders until `≥45 FPS` falls under 95 %. | "The naive build breaks at about N enemies / T towers / P projectiles. Sim time explodes because every tower and bullet checks every enemy." |
-| 1:15–2:45 | Each toggle: grid, pools (heap flat vs sawtooth), sprites/batching (render ms), culling (zoom in, toggle). | One sentence on *why* each one works, and read the numbers. |
-| 2:45–3:15 | Final URL at 5000/100/1000: show ≥45 FPS on ≥95 % of frames and under 5 % of frames over 33 ms. Then push to the new ceiling. | "The requirement is met with headroom. The new ceiling is …" |
-| 3:15–3:30 | Real gameplay: place, upgrade, sell, speed, a wave banner, a boss. | Wrap up. |
+| **0:00–0:30** | Final tab at 5000/100/1000. Click **All off (naive)**: FPS drops to ~15 and `sim` jumps to ~55 ms. Tick **Spatial grid**: FPS jumps to ~55 and `sim` drops to ~1 ms. | "This is 5,000 enemies, 100 towers and 1,000 projectiles. With every optimisation off, every tower and bullet checks every enemy, so sim takes 55 ms and we're at 15 FPS. Turning on the spatial grid takes sim to about 1 ms." |
+| 0:30–1:15 | Naive tab. Drag the **Enemies/Towers/Projectiles** sliders: 2000/50/500 is fine, 3000/75/750 drops `≥45 FPS` below 95%, and 5000/100/1000 is single-digit FPS. | "The original version holds 2,000 enemies but breaks at about 3,000/75/750. At the required load it's under 10 FPS. Sim time grows quadratically, and once frames are late it spirals." |
+| 1:15–2:45 | Final tab, back to all off at 5000/100/1000. Tick the rest one by one, reading `sim` / `render` / `≥45 FPS` each time. **Pools:** removes allocation and `splice`. **Target caching:** sim −40%. **Sprite batching:** render 11 → 2 ms, 100% of frames ≥45 FPS. **Bg cache + HUD:** stops redrawing the static map and rebuilding the DOM every frame. **Culling:** zoom in with the wheel and toggle it; `drawn` goes 6,100 → ~1,700. | One sentence each on *why*. Mention the ablation: "switch any one of the grid, pools, target cache or sprites off at 12k enemies and we fail the 95% bar." |
+| 2:45–3:15 | All on. Drag sliders up: 10,000/200/3,000 stays at 60, 12,000/200/3,000 still 100%, 14,000 starts to dip. | "The requirement is met with headroom. The new ceiling is about 12,000 enemies, 200 towers and 3,000 projectiles: 2.4× the target. Memory stays at 2–5 MB across a full 50-wave run." |
+| 3:15–3:40 | **Menu → Play.** Place Guns and Frost, start the wave, upgrade one (`U`), sell one (`X`), set 4× speed, pause. | "And it's a real game: 50 waves, four towers, five enemy types including bosses, upgrades, selling, speed and pause." |
 
-## Before recording
+## Checklist
 
-- [ ] Both URLs open in tabs; stats panel visible
-- [ ] Chrome window 1440×900; other tabs closed
-- [ ] Numbers already filled in [NUMBERS.md](../NUMBERS.md) as a fallback
-- [ ] Camera and mic checked
-- [ ] Submit the video link and repo/URLs at the form in [PLAN.md](PLAN.md)
+- [ ] Chrome window around 1440×900, other tabs closed, laptop plugged in
+- [ ] Camera + mic on, face visible
+- [ ] Read numbers off the panel live (don't just quote the table)
+- [ ] Submit the video link, both URLs and the repo at the form in [PLAN.md](PLAN.md)

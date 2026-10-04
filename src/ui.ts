@@ -2,7 +2,7 @@
 // when a value changed; with it off they are rebuilt with innerHTML every frame (v0 behaviour).
 import { ENEMIES, MAX_LEVEL, TOWERS, WAVE_COUNT, towerDmg, towerRange, towerRate } from './config';
 import { FLAG_LABELS, flags, type FlagKey } from './flags';
-import type { Game, StressConfig, Tower } from './game';
+import { STRESS_WAVE, type Game, type StressConfig, type Tower } from './game';
 import type { Loop } from './loop';
 
 export interface Controls {
@@ -223,7 +223,9 @@ export class UI {
       }
       this.lastUi = now;
     }
-    const wave = g.stress ? 'stress' : `${g.wave} / ${WAVE_COUNT}`;
+    const wave = g.stress
+      ? `stress ${g.stress.enemies}/${g.stress.towers}/${g.stress.projectiles} <small>· wave-${STRESS_WAVE} enemies</small>`
+      : `${g.wave} / ${WAVE_COUNT}`;
     this.html(this.hudStats, 'hud',
       `<span class="stat gold">Gold <b>${g.stress ? '∞' : g.gold}</b></span>` +
       `<span class="stat lives">Lives <b>${g.stress ? '∞' : g.lives}</b></span>` +

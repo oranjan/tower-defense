@@ -1,21 +1,23 @@
 # Bottlenecks in the naive build (v0)
 
-Tag `v0-naive`, live at https://td-naive.vercel.app. All numbers come from headless Chrome on an Apple Silicon Mac (indicative; see [measurement.md](measurement.md)). The full table is in [NUMBERS.md](../../NUMBERS.md).
+Tag `v0-naive` / folder `naive/`, live at https://td-naive.vercel.app and https://td-final-eight.vercel.app/naive/. All numbers come from headless Chrome on an Apple Silicon Mac (see [measurement.md](measurement.md)).
 
 ## The symptom
 
+From `npm run report` on the production build (2 s warm-up, then a 5 s window; full table in [NUMBERS.md](../../NUMBERS.md)):
+
 | E/T/P | FPS | ≥45 FPS % | >33 ms % | sim ms | render ms |
 |---|---|---|---|---|---|
-| 1000/30/300 | 60.0 | 100.0 | 0.0 | 1.12 | 1.83 |
-| 2000/50/500 | 60.0 | 100.0 | 0.0 | 3.00 | 3.11 |
-| 3000/75/750 | 60.0 | 100.0 | 0.0 | 6.93 | 4.58 |
-| 3500/85/850 | 52.6 | 86.3 | 3.3 | 9.85 | 6.08 |
-| 4000/90/900 | 36.2 | 34.4 | 22.8 | 17.37 | 6.62 |
-| 5000/100/1000 | 10.0 | 5.7 | 92.5 | 89.64 | 8.21 |
+| 1000/30/300 | 60.0 | 100.0 | 0.0 | 0.86 | 1.88 |
+| 2000/50/500 | 60.0 | 100.0 | 0.0 | 2.62 | 3.05 |
+| **3000/75/750** | 45.2 | **67.3** | 11.5 | 11.17 | 7.25 |
+| 3500/85/850 | 37.5 | 39.9 | 19.7 | 15.47 | 7.27 |
+| 4000/90/900 | 26.0 | 0.0 | 54.2 | 25.91 | 8.21 |
+| 5000/100/1000 | 6.1 | 0.0 | 100.0 | 146.87 | 11.83 |
 
-Render time grows roughly **linearly** (1.8 → 8.2 ms). **Sim time grows quadratically**, then collapses past about 3.5k enemies. Once one frame takes longer than 16.7 ms, the next frame owes two or more fixed steps. That makes it slower again, until the 8-step cap is hit. This is the "spiral of death": the cap keeps the page responsive, but the game drops time.
+Render time grows roughly **linearly** (1.9 → 11.8 ms). **Sim time grows quadratically**, then collapses past about 3k enemies. Once one frame takes longer than 16.7 ms, the next frame owes two or more fixed steps. That makes it slower again, until the 8-step cap is hit. This is the "spiral of death": the cap keeps the page responsive, but the game drops time.
 
-**Conclusion:** the simulation is the first wall, and the renderer is the second.
+**Conclusion:** the simulation is the first wall, and the renderer is the second. That's why two optimisations do most of the work: the grid for sim, sprite batching for render.
 
 ## Simulation (per fixed step)
 
@@ -44,13 +46,13 @@ Render time grows roughly **linearly** (1.8 → 8.2 ms). **Sim time grows quadra
 
 ## What fixes what
 
-Mapped to the planned work in [optimizations.md](optimizations.md):
+Mapped to [optimizations.md](optimizations.md):
 
 | Bottleneck | Fix |
 |---|---|
-| Sim 1–3 | Spatial grid (opt 1), plus targeting only when the cooldown is ready and caching the target (opt 7) |
-| Sim 5–6 | Object pools and swap-remove (opt 2) |
-| Sim 4, 7 | SoA typed arrays and a cached segment index (opt 3) |
-| Render 1–5 | Pre-rendered sprites batched by type (opt 4) |
-| Render 6, 8 | Static background layer and a throttled HUD (opt 5) |
-| Render 7 | Viewport culling (opt 6) |
+| Sim 1–3 | Spatial grid (G), plus target caching (T) |
+| Sim 5–6 | Object pools, swap-remove and deferred removal (P) |
+| Sim 4, 7 | Not needed after the above; SoA skipped ([decisions.md D19](../decisions.md)) |
+| Render 1–5 | Sprite atlas + batching (S) |
+| Render 6, 8 | Background cache + HUD throttle (B) |
+| Render 7 | Viewport culling (C) |

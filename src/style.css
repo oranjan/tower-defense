@@ -158,3 +158,4 @@ kbd {
 .card .score b { color: var(--accent); }
 .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0; cursor: pointer; }
 .toggle input { accent-color: var(--accent); }
+.stat small { color: var(--muted); font-weight: 400; }

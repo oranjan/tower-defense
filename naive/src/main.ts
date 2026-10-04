@@ -244,5 +244,5 @@ if (stressParam) {
 }
 
 // Exposed for debugging and scripts/bench.mjs
-Object.assign(window, { game, statsRow: markdownRow });
+Object.assign(window, { game, statsRow: markdownRow, resetStats: () => stats.reset() });
 loop.start();

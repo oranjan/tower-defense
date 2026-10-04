@@ -6,7 +6,9 @@
 
 | Panel line | Definition |
 |---|---|
-| `FPS` | 1000 / mean frame interval |
+| First line | Build and optimisation flags, e.g. `v1 [GPTSBC]` (`·` = off) |
+| `FPS now` | FPS over the last 30 frames (~0.5 s): the live number |
+| `FPS avg` | 1000 / mean frame interval over the whole 600-frame window |
 | `p95 frame` | 95th-percentile frame interval (ms) |
 | `≥45 FPS` | % of frames with interval ≤ 22.3 ms (1000/45 = 22.2, plus timestamp jitter). **Requirement: ≥ 95 %** |
 | `>33 ms` | % of frames with interval > 33.4 ms. **Requirement: < 5 %** |
@@ -14,6 +16,7 @@
 | `render` | Mean ms per frame spent drawing the canvas, updating the UI and the panel |
 | `heap` | `performance.memory.usedJSHeapSize` (Chrome only) |
 | `E/T/P` | Live enemy / tower / projectile counts |
+| `particles` / `drawn` | Live particles; entities actually drawn last frame (drops with culling when zoomed in) |
 
 **Copy stats row (markdown)** in the Stress panel copies a ready-made [NUMBERS.md](../../NUMBERS.md) row. The same row is available in the console as `statsRow()`.
 
@@ -40,10 +43,26 @@ Start it from the Stress panel (sliders or the S1/S2 presets) or with a URL: `?s
 
 1. Desktop Chrome, window 1440×900, 60 Hz display. Note the Chrome version and machine.
 2. Close other heavy tabs. Use the production build (deployed URL or `npm run build && npm run preview`), not the dev server.
-3. Start the scenario, wait **5 s** for the window to fill with steady-state frames, then read or copy the panel.
+3. Start the scenario, wait **2 s**, then press a slider or re-toggle to reset the window (or call `resetStats()`), wait **5 s**, then read or copy the panel.
 4. For each optimisation, run the **same scenario** with the toggle off, then on (or naive URL vs final URL for build-level changes).
 5. Paste both rows into [NUMBERS.md](../../NUMBERS.md).
-6. **Memory:** run all 50 waves at 4× with a preset defence and watch `heap`. It should level off, not climb. Cross-check once with the DevTools Memory and Performance panels; that screenshot goes in the README.
+6. **Memory:** `npm run memory -- <url>` plays all 50 waves with a scripted defence and prints heap per 5 waves. It should stay level, not climb. Result: 1.9–5.0 MB with pools, see [NUMBERS.md §5](../../NUMBERS.md#5-memory-over-a-complete-50-wave-run).
+
+## Scripts (headless Chrome via `puppeteer-core`)
+
+All three drive your local Chrome headless at 1440×900 against a URL. Run them against a **production build** (`npm run build && npx vite preview --port 4317`) or a deployed URL.
+
+| Script | What it does |
+|---|---|
+| `npm run report -- <url>` | **Generates every table in NUMBERS.md:** naive ramp (`<url>naive/`); each optimisation switched on in turn at 2000/50/500 and 5000/100/1000; culling at 3× zoom; ablation (all on, one off) at 12000/200/3000; final ceiling ramp. Each row: setup → **2 s warm-up** → `resetStats()` → **5 s window** → `statsRow()`. The warm-up keeps the spawn spike and first GC out of the window. |
+| `npm run memory -- <url> [nopool]` | A scripted player plays all 50 waves fast-forwarded (fixed 1/60 s steps, yielding to the page every 10 s of game time so GC runs normally). Prints heap min/max per 5 waves. |
+| `npm run bench -- <url> E,T,P …` | Quick single-scenario rows for regression checks |
+
+The page exposes `game`, `flags`, `cam`, `ui`, `statsRow()` and `resetStats()` on `window` for these scripts. The frozen naive page exposes `game`, `statsRow()` and `resetStats()`.
+
+## Headless vs desktop Chrome
+
+Headless Chrome has no vsync and rasterises on a different path, so absolute values differ from a real window. GPU-heavy costs like `shadowBlur` usually look *cheaper* headless, which understates the sprite-batching gain. The relative before/after and the breaking points are what the tables are for; the video re-derives them live on the deployed URLs.
 
 ## Headless benchmark (`npm run bench`)
 

@@ -7,23 +7,28 @@ TypeScript + Vite, a static single page, Canvas 2D for the game world and plain 
 ## Module layout
 
 ```
-index.html            #hud (top bar) · #stage (canvases + stats panel + overlay) · #side (shop, panels)
+index.html            #hud (top bar) · #stage (#bg + #fg canvases, stats panel, overlay) · #side (shop, panels)
 src/
-  main.ts             creates Game, Camera, Renderer, Stats, Loop, UI; input handling; stats panel; ?stress= boot
+  main.ts             creates Game, Camera, Renderer, Stats, Loop, UI; input; stats panel; ?stress= / ?naive= / ?off= boot
   loop.ts             Loop: one requestAnimationFrame callback, fixed-step accumulator, pause & speed
-  game.ts             Game: entity arrays, waves, towers, combat, economy, stress controller
-  render.ts           Renderer: draws one frame of Game through Camera
-  ui.ts               UI: DOM HUD, shop, wave button, tower panel, enemy legend, stress sliders, overlays
-  camera.ts           Camera: zoom (1 = fit map), pan, clamp, screen↔world, visible rect, base-hit shake
+  flags.ts            runtime optimisation toggles (G P T S B C) + URL parsing
+  game.ts             Game: entities, pools, waves, towers, combat, economy, stress controller, event counters
+  grid.ts             SpatialGrid: counting-sort uniform grid, query(x, y, r, out)
+  render.ts           Renderer: fast* (atlas, batching, culling, bg cache) and naive* draw paths
+  sprites.ts          sprite atlas built once at startup
+  ui.ts               UI: HUD, shop, wave button, tower panel, legend, Optimisations toggles, stress sliders, overlays
+  camera.ts           Camera: zoom (1 = fit map), pan, clamp, screen↔world, visible rect, shake, change detection
   map.ts              path waypoints → PATH polyline, CUM_LEN, TILE_KIND grid, pointAt(s)
-  waves.ts            buildWave(n), hpMul, budget, spawnGap, waveBonus
+  waves.ts            buildWave(n), hpMul, budget, spawnGap, waveBonus, rewardMul
   config.ts           world size, TOWERS / ENEMIES tables, upgrade formulas
   rng.ts              mulberry32 seeded PRNG
-  bench/stats.ts      Stats: 600-frame ring buffer → StatsSummary
-scripts/bench.mjs     headless benchmark (see performance/measurement.md)
+  bench/stats.ts      Stats: 600-frame ring buffer → StatsSummary, currentFps()
+naive/                frozen v0 game (own index.html + src/), built as the /naive/ page
+scripts/              report.mjs · memory.mjs · bench.mjs (headless Chrome via puppeteer-core)
+vite.config.ts        two-page build: / and /naive/
 ```
 
-Dependencies only point downward: `main → loop/game/render/ui → camera/map/waves/config/rng`. `game.ts` knows nothing about rendering or the DOM.
+Dependencies only point downward: `main → loop/game/render/ui → camera/map/waves/config/grid/flags/rng`. `game.ts` knows nothing about rendering or the DOM. It exposes per-tick event counters (`Game.events`) for anything that wants to react, such as sound.
 
 ## Frame lifecycle
 
@@ -54,9 +59,23 @@ requestAnimationFrame(t)                                  loop.ts
 | `time` | Simulation clock (seconds), used for slow expiry |
 | `occupied[]` | Tower per tile (COLS×ROWS) for O(1) placement and click lookup |
 
-## Data model (v0 naive)
+## Data model
 
-Plain classes in plain arrays: `Enemy[]`, `Tower[]`, `Projectile[]`, `Particle[]`. Removal uses `splice` (and `indexOf` for kills). This is deliberate; see [performance/bottlenecks.md](performance/bottlenecks.md). The planned optimised model (typed-array SoA stores with free lists) is in [performance/optimizations.md](performance/optimizations.md).
+Class instances in plain arrays: `Enemy[]`, `Tower[]`, `Projectile[]`, `Particle[]`. Every field is initialised in the constructor, so V8 keeps one hidden class per type.
+
+- **Pooled mode** (`usePool`): objects are reused via `init()` from free lists and removed with O(1) swap-remove. Kills mid-tick set `dead = true` and are swept once at the end of the tick.
+- **Naive mode:** `new` + `splice`, exactly as v0.
+- **Struct-of-Arrays:** deliberately not used. Sim is already 0.46 ms at the required load ([decisions.md D19](decisions.md)).
+
+Each frame, `Game.update` does:
+1. waves
+2. move enemies (`s += v·dt`, then `pointAt`)
+3. `grid.rebuild(enemies)`
+4. towers: target, fire, frost pulse
+5. projectiles: move, collide, splash
+6. particles
+7. `sweepDead()`
+8. stress top-up
 
 **Enemies** store their position as `s`, the distance travelled along the path polyline. `pointAt(s)` turns that into `x, y`. Movement is then one addition per tick, and "first enemy" targeting is just "highest `s`".
 
