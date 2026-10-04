@@ -135,9 +135,9 @@ export class UI {
     const stress = el('div', 'panel stress');
     stress.appendChild(el('h3', '', 'Stress test'));
     const defs: [keyof StressConfig, string, number, number][] = [
-      ['enemies', 'Enemies', 10000, 5000],
-      ['towers', 'Towers', 200, 100],
-      ['projectiles', 'Projectiles', 3000, 1000],
+      ['enemies', 'Enemies', 16000, 5000],
+      ['towers', 'Towers', 270, 100],
+      ['projectiles', 'Projectiles', 8000, 1000],
     ];
     for (const [key, label, max, def] of defs) {
       const wrap = el('label', 'slider');

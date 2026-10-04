@@ -8,14 +8,13 @@ import { flags } from './flags';
 import { SpatialGrid } from './grid';
 import { PATH_LEN, TILE_KIND, inBounds, pointAt } from './map';
 import { mulberry32 } from './rng';
-import { buildWave, hpMul, waveBonus, type Spawn } from './waves';
+import { buildWave, hpMul, rewardMul, waveBonus, type Spawn } from './waves';
 
 export type Phase = 'menu' | 'playing' | 'victory' | 'gameover';
 
 export const MAX_ENEMIES = 16384;
 export const MAX_PARTICLES = 2500; // pooled mode only
 const MAX_RADIUS = Math.max(...ENEMIES.map((e) => e.radius));
-const REWARD_TEXT = ENEMIES.map((e) => '+' + e.reward);
 
 let nextId = 1;
 
@@ -142,8 +141,8 @@ export interface StressConfig {
 
 // Gameplay events for sound/feedback. Plain counters per tick, so the sim never calls out mid-step.
 export const EV_SHOT_GUN = 0, EV_SHOT_CANNON = 1, EV_SHOT_SNIPER = 2, EV_FROST = 3, EV_EXPLODE = 4, EV_HIT = 5,
-  EV_KILL = 6, EV_BOSS_KILL = 7, EV_LIFE_LOST = 8, EV_WAVE = 9, EV_BOSS_SPAWN = 10;
-export const EV_COUNT = 11;
+  EV_KILL = 6, EV_BOSS_KILL = 7, EV_LIFE_LOST = 8, EV_WAVE = 9, EV_BOSS_SPAWN = 10, EV_BUILD = 11, EV_UPGRADE = 12, EV_SELL = 13;
+export const EV_COUNT = 14;
 
 const tmp = { x: 0, y: 0 };
 
@@ -321,7 +320,10 @@ export class Game {
     if (!this.stress) this.gold -= TOWERS[kind].cost;
     this.towers.push(t);
     this.occupied[row * COLS + col] = t;
-    this.burst(t.x, t.y, TOWERS[kind].color, 10, 80);
+    if (!this.stress) {
+      this.burst(t.x, t.y, TOWERS[kind].color, 10, 80);
+      this.events[EV_BUILD]++;
+    }
     return t;
   }
 
@@ -340,6 +342,7 @@ export class Game {
     t.invested += c;
     t.level++;
     this.burst(t.x, t.y, '#ffffff', 14, 120);
+    this.events[EV_UPGRADE]++;
     return true;
   }
 
@@ -352,6 +355,7 @@ export class Game {
     this.towers.splice(this.towers.indexOf(t), 1);
     this.occupied[t.row * COLS + t.col] = null;
     this.floatText(t.x, t.y - 10, '+' + this.sellValue(t), '#f5c542');
+    this.events[EV_SELL]++;
   }
 
   // ---------- simulation ----------
@@ -604,13 +608,14 @@ export class Game {
       return;
     }
     const d = ENEMIES[e.kind];
-    this.gold += d.reward;
+    const reward = Math.max(1, Math.round(d.reward * rewardMul(this.wave)));
+    this.gold += reward;
     this.score += d.reward * 10;
     this.kills++;
     this.events[e.kind === 4 ? EV_BOSS_KILL : EV_KILL]++;
     if (by) by.kills++;
     this.burst(e.x, e.y, d.color, 6, 90);
-    this.floatText(e.x, e.y - 8, REWARD_TEXT[e.kind], '#f5c542');
+    this.floatText(e.x, e.y - 8, '+' + reward, '#f5c542');
     if (flags.usePool) {
       e.dead = true; // removed in sweepDead() at the end of the tick
       this.deadCount++;

@@ -6,10 +6,12 @@ export interface Spawn {
   kind: number;
 }
 
-export const hpMul = (n: number) => 1 + 0.1 * n + 0.004 * n * n; // w1 1.1x, w25 6x, w50 16x
-export const budget = (n: number) => 15 + 6 * n + 0.25 * n * n;
+export const hpMul = (n: number) => 1 + 0.2 * n + 0.025 * n * n; // w1 1.2x, w25 21x, w50 74x
+export const budget = (n: number) => 15 + 7 * n + 0.3 * n * n;
 export const spawnGap = (n: number) => Math.max(0.12, 0.6 - 0.01 * n);
 export const waveBonus = (n: number) => 25 + 5 * n;
+// Kill rewards shrink as waves grow so the economy can't outscale the HP curve (w1 ×0.96, w25 ×0.5, w50 ×0.33)
+export const rewardMul = (n: number) => 1 / (1 + 0.04 * n);
 export const isBossWave = (n: number) => n % 10 === 0;
 
 const UNLOCK = [
