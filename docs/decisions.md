@@ -98,3 +98,13 @@ The user added 21 sound files (`sounds/`). An audio manager was prototyped:
 - muted during stress tests
 
 The user then chose to leave sound out. The `Game.events` counters remain, so wiring it back in is a small change.
+
+### D25 — 50-wave stress run
+**Why:** the brief lists "memory usage must remain broadly stable during a complete 50-wave run" under *During the stress scenario*. The constant stress mode can't show that, because its enemies are immortal, so nothing is spawned or freed. The 50-wave stress run (`waves: true`; the **50-wave stress run** button or `?stress=5000,100,1000&waves=1`) works like this:
+- the enemy, tower and projectile counts stay at the target
+- waves 1 to 50 advance every `STRESS_WAVE_SECONDS` (6 s, so about 5 minutes in total)
+- enemies are mortal and use each wave's real composition and HP
+- every kill is replaced in the same tick
+
+Spawning, killing and pooling then churn at full load for the whole run. `npm run stress-memory` records heap and frame stats across it.
+**Rejected:** fast-forwarding (it measures heap but not frame quality), and a normal game at 5,000 enemies (the waves would never reach that load without a rebalance).

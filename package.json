@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "bench": "node scripts/bench.mjs",
     "report": "node scripts/report.mjs",
-    "memory": "node scripts/memory.mjs"
+    "memory": "node scripts/memory.mjs",
+    "stress-memory": "node scripts/stress-memory.mjs",
+    "refresh-rate": "node scripts/refresh-rate.mjs",
+    "interactivity": "node scripts/interactivity.mjs"
   },
   "devDependencies": {
     "puppeteer-core": "^25.12.0",

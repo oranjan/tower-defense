@@ -89,6 +89,14 @@ Each frame, `Game.update` does:
 - **Speed** is forced to 1× on start so benchmarks compare.
 - **Sliders** call `setStress` to change counts live without a reset.
 
+**50-wave stress run** (`waves: true`; button in the Stress panel or `?stress=5000,100,1000&waves=1`):
+- same held counts, but waves 1→50 advance every `STRESS_WAVE_SECONDS` (6 s)
+- enemies are **mortal**, with the current wave's mix and HP
+- every kill is replaced in the same tick (`topUpEnemies`), so spawn, kill and pool churn run at full load for the whole run
+- after wave 50 the run ends with a "Stress run complete" screen
+
+See [decisions.md D25](decisions.md).
+
 ## Input
 
 Pointer events go on the `#fg` canvas.

@@ -1,6 +1,6 @@
 # Tower Defense
 
-A browser tower defense game: 50 waves, 4 towers, 5 enemy types. It holds **60 FPS with 5,000 enemies, 100 towers and 1,000 projectiles** on screen (100% of frames ≥ 45 FPS, 0% over 33 ms), and tops out at **12,000 / 200 / 3,000**.
+A browser tower defense game: 50 waves, 4 towers, 5 enemy types. It holds **60 FPS with 5,000 enemies, 100 towers and 1,000 projectiles** on screen (100% of frames ≥ 45 FPS, 0% over 33 ms), and tops out at **12,000 / 200 / 3,000**. At that stress load it stays responsive (input → paint ≤ 32 ms) and keeps memory flat (3–6 MB) through a complete 50-wave run, and the simulation is identical on 30–240 Hz displays.
 
 | Build | Link |
 |---|---|
@@ -80,7 +80,35 @@ With all six on, switching off any one of G, P, T or S at 12,000 enemies drops b
 
 ## Design decisions
 
-All 24 decisions, with their reasoning and the alternatives rejected: [docs/decisions.md](docs/decisions.md).
+Every decision with its reasoning. Rejected alternatives and longer notes are in [docs/decisions.md](docs/decisions.md).
+
+| # | Decision | Why |
+|---|---|---|
+| D1 | TypeScript + Vite, static site | Fast iteration, a static `dist/` any host can serve, and types that catch index bugs in hot loops |
+| D2 | Canvas 2D, no game engine | The grade is about *our* optimisations; an engine would hide batching and culling. PixiJS was the fallback but wasn't needed |
+| D3 | Build and deploy a naive version first, then freeze it | The video has to show the initial implementation breaking in a real browser |
+| D4 | Fixed 1/60 s simulation step with an accumulator, max 8 steps per frame | Same behaviour on 60/120/144 Hz screens; the cap stops a slow frame from snowballing |
+| D5 | One `requestAnimationFrame` loop for everything | Required by the brief; every timer is a field counted down in `update()` |
+| D6 | World in canvas, UI in DOM | Crisp, accessible text and buttons; the canvas only draws what scales with entity count |
+| D7 | Seeded RNG (mulberry32) | The same waves and stress layout every run, so benchmarks repeat |
+| D8 | Enemy position = distance `s` along the road polyline | Movement is one add; "first" targeting is max `s`; leading a target is `pointAt(s + v·t)` |
+| D9 | Stress mode holds the counts constant | Steady state is needed to measure; the counts would drift if enemies died off |
+| D10 | Metrics match the brief's wording: % frames ≤22.2 ms and % >33 ms | What we report is literally what is graded; sim and render are timed separately |
+| D11 | 4 towers × 5 enemies that counter each other | "Meaningfully different": Swarm beats single-target towers, armor beats Guns, Tanks resist slow |
+| D12 | Waves come from formulas (HP, budget, unlocks) | 50 hand-written waves would be slow to make and hard to balance; formulas tune with a few constants |
+| D13 | Waves auto-start after a 10 s countdown, with an early-call bonus | Keeps the pace up over 50 waves; calling early is a risk/reward choice |
+| D14 | Numeric constants instead of TS `enum` | Works with Vite's `isolatedModules` and has zero runtime cost |
+| D15 | Camera zoom from 1× (fit) to 4× | The whole map is always reachable; zooming in is what makes culling measurable |
+| D16 | devicePixelRatio capped at 2 | 3× DPR costs 2.25× the fill for no visible gain in this art style |
+| D17 | Deploy prebuilt static files to separate Vercel projects | Permanent naive and final URLs for the video; works around a Vercel CLI scope bug |
+| D18 | Headless benchmark scripts alongside the in-game panel | Repeatable numbers (`npm run report`), while the video still derives them live |
+| D19 | Struct-of-Arrays rewrite **skipped** | Measured: sim is 0.46 ms at 5,000 enemies after the grid, pools and target cache; render is the remaining cost |
+| D20 | Every optimisation is a runtime toggle | Before and after on the same page and scenario, live in the video |
+| D21 | Frozen v0 kept in `naive/` and served at `/naive/` | The real "initial implementation" stays deployable next to the final build |
+| D22 | Balance tuned with a scripted bot | Evidence over guesswork: a Gun-heavy build dies on wave 47, a Sniper/Cannon build wins |
+| D23 | Kills mid-tick are deferred and swept at the end of the tick | Swap-removing in the middle of loops would shift indices; IDs stop recycled objects being mistaken for old targets |
+| D24 | Supplied sound effects not wired in | The user's call; event counters in `Game` make adding them later a small change |
+| D25 | A 50-wave stress run in addition to the constant stress mode | The brief asks for stable memory over a complete 50-wave run *during the stress scenario*; mortal enemies replaced at 5,000 alive exercise the pools for the whole run |
 
 ## Repo layout
 

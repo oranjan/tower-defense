@@ -34,10 +34,13 @@ npx vite preview --port 4317         # serve dist/ for measurement
 npm run report -- <url>              # every NUMBERS.md table (headless Chrome)
 npm run memory -- <url> [nopool]     # 50-wave heap run
 npm run bench -- <url> E,T,P …       # quick rows
+npm run stress-memory -- <url>       # 50-wave run at 5000/100/1000 (~5 min)
+npm run refresh-rate -- <url>        # determinism across 30–240 Hz
+npm run interactivity -- <url>       # input → next paint under stress
 ```
 
 **URL params:**
-- `?stress=E,T,P` starts a stress test
+- `?stress=E,T,P` starts a stress test (add `&waves=1` for the 50-wave stress run)
 - `?naive=1` turns every optimisation off
 - `?off=grid,pool,target,sprites,bg,culling` turns specific ones off
 
@@ -64,7 +67,7 @@ src/
   rng.ts         seeded mulberry32
   bench/stats.ts frame-time ring buffer → FPS / p95 / % frames
 naive/           FROZEN v0 copy (own index.html + src/), second Vite page at /naive/
-scripts/         report.mjs · memory.mjs · bench.mjs
+scripts/         report · memory · stress-memory · refresh-rate · interactivity · bench (.mjs)
 sounds/          supplied sound effects, not wired in (decisions D24)
 ```
 

@@ -36,8 +36,8 @@ export class UI {
   private upBtn = el('button');
   private sellBtn = el('button', 'danger');
   private overlay = el('div', 'overlay');
-  private stressInputs: Record<keyof StressConfig, HTMLInputElement> = {} as never;
-  private stressVals: Record<keyof StressConfig, HTMLSpanElement> = {} as never;
+  private stressInputs: Record<'enemies' | 'towers' | 'projectiles', HTMLInputElement> = {} as never;
+  private stressVals: Record<'enemies' | 'towers' | 'projectiles', HTMLSpanElement> = {} as never;
   private overlayKey = '-'; // never a real key, so the first update always applies
   private flagBoxes: HTMLInputElement[] = [];
   private lastUi = 0;
@@ -134,7 +134,7 @@ export class UI {
 
     const stress = el('div', 'panel stress');
     stress.appendChild(el('h3', '', 'Stress test'));
-    const defs: [keyof StressConfig, string, number, number][] = [
+    const defs: ['enemies' | 'towers' | 'projectiles', string, number, number][] = [
       ['enemies', 'Enemies', 16000, 5000],
       ['towers', 'Towers', 270, 100],
       ['projectiles', 'Projectiles', 8000, 1000],
@@ -166,9 +166,12 @@ export class UI {
       };
       presets.appendChild(b);
     }
+    const run50 = el('button', 'wide', '50-wave stress run (~5 min)');
+    run50.title = 'Hold these counts while waves 1-50 advance every few seconds; enemies die and are replaced';
+    run50.onclick = () => this.c.startStress({ ...this.stressCfg(), waves: true });
     const go = el('button', 'wide', 'Start stress test');
     go.onclick = () => this.c.startStress(this.stressCfg());
-    stress.append(presets, go);
+    stress.append(presets, go, run50);
     side.appendChild(stress);
 
     side.appendChild(el('div', 'help',
@@ -185,7 +188,7 @@ export class UI {
   }
 
   setStressInputs(cfg: StressConfig) {
-    for (const k of Object.keys(cfg) as (keyof StressConfig)[]) {
+    for (const k of ['enemies', 'towers', 'projectiles'] as const) {
       this.stressInputs[k].value = String(cfg[k]);
       this.stressVals[k].textContent = String(cfg[k]);
     }
@@ -223,9 +226,11 @@ export class UI {
       }
       this.lastUi = now;
     }
-    const wave = g.stress
-      ? `stress ${g.stress.enemies}/${g.stress.towers}/${g.stress.projectiles} <small>· wave-${STRESS_WAVE} enemies</small>`
-      : `${g.wave} / ${WAVE_COUNT}`;
+    const wave = !g.stress
+      ? `${g.wave} / ${WAVE_COUNT}`
+      : g.stress.waves
+        ? `${g.wave} / ${WAVE_COUNT} <small>· stress ${g.stress.enemies}/${g.stress.towers}/${g.stress.projectiles}</small>`
+        : `stress ${g.stress.enemies}/${g.stress.towers}/${g.stress.projectiles} <small>· wave-${STRESS_WAVE} enemies</small>`;
     this.html(this.hudStats, 'hud',
       `<span class="stat gold">Gold <b>${g.stress ? '∞' : g.gold}</b></span>` +
       `<span class="stat lives">Lives <b>${g.stress ? '∞' : g.lives}</b></span>` +
@@ -295,7 +300,9 @@ export class UI {
     } else {
       const win = g.phase === 'victory';
       this.overlay.innerHTML =
-        `<div class="card"><h1>${win ? 'Victory!' : 'Game over'}</h1><p>${win ? 'All 50 waves held.' : `The base fell on wave ${g.wave}.`}</p>` +
+        (g.stress
+          ? `<div class="card"><h1>Stress run complete</h1><p>50 waves at ${g.stress.enemies} enemies / ${g.stress.towers} towers / ${g.stress.projectiles} projectiles.</p>`
+          : `<div class="card"><h1>${win ? 'Victory!' : 'Game over'}</h1><p>${win ? 'All 50 waves held.' : `The base fell on wave ${g.wave}.`}</p>`) +
         `<p class="score">Score <b>${g.score}</b> · Kills <b>${g.kills}</b></p><div class="row"><button class="primary big" data-a="play">Play again</button><button class="big" data-a="menu">Menu</button></div></div>`;
     }
     this.overlay.querySelectorAll('button').forEach((b) => {

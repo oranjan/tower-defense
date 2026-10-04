@@ -13,6 +13,7 @@ Build order and timings come from [PLAN.md §5](PLAN.md#5-build-order-do-it-in-t
 | 4b. Frozen naive copy at `/naive/` | — | ✅ | `naive/` folder, second Vite page (D21) |
 | 5. Polish + balance | 16:05–16:25 | ✅ ~15:20 | Balance tuned with a scripted bot (D22). Live "FPS now". Stress HUD shows the scenario. Sound skipped at the user's request (D24) |
 | 6. NUMBERS/README/docs + final deploy | 16:25–16:45 | ✅ ~15:30 | https://td-final-eight.vercel.app (+ `/naive/`); `npm run report` / `npm run memory` |
+| 6b. Brief audit: proofs for every performance bullet | — | ✅ ~15:55 | 50-wave stress run (D25), refresh-rate test, interactivity test, decisions listed in README. NUMBERS.md §6–8 |
 | 7. Video + submit | 16:45–17:00 | ☐ user | [video-script.md](video-script.md); form link in [PLAN.md](PLAN.md) |
 
 ## Known gaps

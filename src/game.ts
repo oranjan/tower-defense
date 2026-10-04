@@ -14,7 +14,8 @@ export type Phase = 'menu' | 'playing' | 'victory' | 'gameover';
 
 export const MAX_ENEMIES = 16384;
 export const MAX_PARTICLES = 2500; // pooled mode only
-export const STRESS_WAVE = 25; // stress-mode enemies use this wave's HP
+export const STRESS_WAVE = 25; // constant stress mode: enemies use this wave's HP
+export const STRESS_WAVE_SECONDS = 6; // 50-wave stress run: seconds per wave (50 waves ≈ 5 min)
 const MAX_RADIUS = Math.max(...ENEMIES.map((e) => e.radius));
 
 let nextId = 1;
@@ -138,6 +139,9 @@ export interface StressConfig {
   enemies: number;
   towers: number;
   projectiles: number;
+  // 50-wave stress run: counts are held constant while waves 1..50 advance on a timer, enemies are mortal
+  // (killed ones are replaced from the current wave's mix and HP), so the pools churn the whole time.
+  waves?: boolean;
 }
 
 // Gameplay events for sound/feedback. Plain counters per tick, so the sim never calls out mid-step.
@@ -182,6 +186,9 @@ export class Game {
   baseHit = 0;
 
   stress: StressConfig | null = null;
+  stressTime = 0; // 50-wave stress run clock
+  private stressMix: number[] = [];
+  private stressMixIdx = 0;
   rng = mulberry32(42);
 
   reset() {
@@ -210,6 +217,8 @@ export class Game {
     this.bannerTime = 0;
     this.baseHit = 0;
     this.stress = null;
+    this.stressTime = 0;
+    this.stressMixIdx = 0;
     this.rng = mulberry32(42);
   }
 
@@ -368,13 +377,17 @@ export class Game {
     if (this.baseHit > 0) this.baseHit -= dt;
 
     if (!this.stress) this.updateWaves(dt);
+    else if (this.stress.waves) this.updateStressWaves(dt);
     this.updateEnemies(dt);
     if (flags.useGrid) this.grid.rebuild(this.enemies);
     for (let i = 0; i < this.towers.length; i++) this.updateTower(this.towers[i], dt);
     this.updateProjectiles(dt);
     this.updateParticles(dt);
     this.sweepDead();
-    if (this.stress) this.topUpProjectiles();
+    if (this.stress) {
+      if (this.stress.waves) this.topUpEnemies();
+      this.topUpProjectiles();
+    }
 
     if (this.lives <= 0 && !this.stress) {
       this.lives = 0;
@@ -604,8 +617,8 @@ export class Game {
     e.hp -= pierce ? dmg : Math.max(1, dmg - e.armor);
     e.flash = 0.08;
     if (e.hp > 0) return;
-    if (this.stress) {
-      e.hp = e.maxHp; // stress mode holds the enemy count constant
+    if (this.stress && !this.stress.waves) {
+      e.hp = e.maxHp; // constant stress mode: enemies are immortal so the count holds
       return;
     }
     const d = ENEMIES[e.kind];
@@ -657,18 +670,50 @@ export class Game {
     this.stress = { ...cfg };
     this.gold = 0;
     this.lives = 999;
+    if (cfg.waves) this.setStressWave(1);
     this.setStress(cfg);
+  }
+
+  private setStressWave(n: number) {
+    this.wave = n;
+    this.stressMix = buildWave(n).map((sp) => sp.kind);
+    this.stressMixIdx = 0;
+    this.bannerTime = 2.5;
+    this.events[EV_WAVE]++;
+  }
+
+  private spawnStressEnemy() {
+    const st = this.stress!;
+    if (st.waves) {
+      const kind = this.stressMix[this.stressMixIdx++ % this.stressMix.length];
+      this.spawnEnemy(kind, hpMul(this.wave), this.rng() * PATH_LEN);
+    } else {
+      this.spawnEnemy(this.enemies.length % 4, hpMul(STRESS_WAVE), this.rng() * PATH_LEN);
+    }
+  }
+
+  private updateStressWaves(dt: number) {
+    this.stressTime += dt;
+    if (this.stressTime >= WAVE_COUNT * STRESS_WAVE_SECONDS) {
+      this.phase = 'victory'; // run complete
+      return;
+    }
+    const w = 1 + Math.floor(this.stressTime / STRESS_WAVE_SECONDS);
+    if (w !== this.wave) this.setStressWave(w);
+  }
+
+  // Replace enemies killed this tick so the count stays at the target
+  private topUpEnemies() {
+    const want = Math.min(this.stress!.enemies, MAX_ENEMIES);
+    while (this.enemies.length < want) this.spawnStressEnemy();
   }
 
   // Adjust live counts to match the config (sliders call this)
   setStress(cfg: StressConfig) {
     if (!this.stress) return;
-    this.stress = { ...cfg };
-    const scale = hpMul(STRESS_WAVE);
+    this.stress = { ...cfg, waves: cfg.waves ?? this.stress.waves };
     while (this.enemies.length > cfg.enemies) this.removeEnemyAt(this.enemies.length - 1);
-    while (this.enemies.length < cfg.enemies && this.enemies.length < MAX_ENEMIES) {
-      this.spawnEnemy(this.enemies.length % 4, scale, this.rng() * PATH_LEN);
-    }
+    while (this.enemies.length < cfg.enemies && this.enemies.length < MAX_ENEMIES) this.spawnStressEnemy();
     while (this.towers.length > cfg.towers) {
       const t = this.towers.pop()!;
       this.occupied[t.row * COLS + t.col] = null;

@@ -10,7 +10,10 @@
 | Required 5,000 / 100 / 1,000 | 6.1 FPS · 0% ≥45 FPS · 100% >33 ms | **60 FPS · 100% ≥45 FPS · 0% >33 ms** |
 | Sim time at 5,000 / 100 / 1,000 | 146.9 ms | **0.46 ms** (~320× less) |
 | Render time at 5,000 / 100 / 1,000 | 11.8 ms | **1.9 ms** (~6× less) |
-| Heap over a full 50-wave run | — | **1.9–5.0 MB, flat** |
+| Heap over a full 50-wave run (normal play) | — | **1.9–5.0 MB, flat** |
+| Heap over a full 50-wave run **at 5,000 / 100 / 1,000** | — | **3.0–6.1 MB, flat**; 100% of frames ≥45 FPS for the whole 5 min |
+| Input → next paint under stress (worst) | 224 ms | **32 ms** |
+| Same game state at 30–240 Hz displays | — | **identical** |
 
 Live: final https://td-final-eight.vercel.app · naive https://td-naive.vercel.app (also https://td-final-eight.vercel.app/naive/)
 
@@ -26,6 +29,7 @@ Live: final https://td-final-eight.vercel.app · naive https://td-naive.vercel.a
   - `npm run build && npx vite preview --port 4317`
   - `npm run report -- http://localhost:4317/` (every table below)
   - `npm run memory -- http://localhost:4317/ [nopool]`
+  - `npm run stress-memory -- http://localhost:4317/` · `npm run refresh-rate -- …` · `npm run interactivity -- …`
 
 Method details: [docs/performance/measurement.md](docs/performance/measurement.md). Why v0 is slow: [docs/performance/bottlenecks.md](docs/performance/bottlenecks.md). What each optimisation does: [docs/performance/optimizations.md](docs/performance/optimizations.md).
 
@@ -127,3 +131,49 @@ A scripted player (Gun/Frost/Cannon/Sniper mix on the best tiles, upgrading with
 | Result | Victory, 20 lives | Victory, 20 lives |
 
 With pools the heap stays within about 2–5 MB for the whole run, with no growth trend. The small rise follows the larger late waves (more live enemies and particles), and it falls back when they die. Without pools the peaks are ~50% higher, because every shot, hit and effect allocates and leaves garbage for the GC.
+
+## 6. Memory over a complete 50-wave run *during the stress scenario*
+
+`npm run stress-memory`: the **50-wave stress run** (button in the Stress panel, or `?stress=5000,100,1000&waves=1`). Counts are held at 5,000 enemies / 100 towers / 1,000 projectiles while waves 1→50 advance every 6 s. Enemies are mortal, with each wave's real mix and HP, and every kill is replaced in the same tick, so spawning, killing and pooling churn at full load the whole time. It runs in real time at 1× (about 5 minutes), sampled every 5 s.
+
+| Waves | heap min MB | heap max MB | FPS (avg) | ≥45 FPS % (worst 5 s window) | >33 ms % (worst 5 s window) | enemies killed so far |
+|---|---|---|---|---|---|---|
+| 1–5 | 3.7 | 6.0 | 60.0 | 99.7 | 0.3 | 90,477 |
+| 6–10 | 3.0 | 4.3 | 60.0 | 99.7 | 0.0 | 120,129 |
+| 11–15 | 3.0 | 5.6 | 60.0 | 100.0 | 0.0 | 128,663 |
+| 16–20 | 3.5 | 6.1 | 60.0 | 100.0 | 0.0 | 133,803 |
+| 21–25 | 3.0 | 6.1 | 60.0 | 100.0 | 0.0 | 138,152 |
+| 26–30 | 3.8 | 5.5 | 60.0 | 100.0 | 0.0 | 141,297 |
+| 31–35 | 3.8 | 6.1 | 60.0 | 100.0 | 0.0 | 143,663 |
+| 36–40 | 3.7 | 5.8 | 60.0 | 100.0 | 0.0 | 145,639 |
+| 41–45 | 3.0 | 5.8 | 60.0 | 100.0 | 0.0 | 147,090 |
+| 46–50 | 3.0 | 5.8 | 60.0 | 100.0 | 0.0 | 148,786 |
+
+**Whole run:** 59 windows · heap **3.0–6.1 MB, no trend** · mean ≥45 FPS **100.0%** · mean >33 ms **0.0%** · **148,786 enemies killed and replaced**. Memory and frame quality both hold for a complete 50-wave run at the stress load.
+
+## 7. Refresh-rate independence
+
+`npm run refresh-rate`: the real `Loop` is driven with synthetic `requestAnimationFrame` timestamps at each display rate, with the same towers, playing from wave 1 for 10,800 fixed steps (180 s of game time).
+
+| Display Hz | frames rendered | wall-clock s to reach 180 s of game time | wave | gold | score | kills | lives | enemies alive | Σ enemy path distance |
+|---|---|---|---|---|---|---|---|---|---|
+| 30 | 5,401 | 180.00 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+| 60 | 10,802 | 180.02 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+| 75 | 13,501 | 180.00 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+| 120 | 21,601 | 180.00 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+| 144 | 25,922 | 180.01 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+| 165 | 29,701 | 180.00 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+| 240 | 43,202 | 180.00 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
+
+Game speed and outcome are **identical at every refresh rate**. A faster screen only draws more frames of the same simulation.
+
+## 8. Interactivity during the stress scenario
+
+`npm run interactivity`: at 5000/100/1000, Chrome sends 31 real inputs: tower hotkeys, map clicks (place / select), Escape, the 2× button, pause/resume, and wheel zoom. The browser's Event Timing API reports, for each one, the time from input to the next painted frame (the measure behind INP; under 200 ms is "good").
+
+| Build | FPS | inputs | median ms | p98 ms (≈ INP) | worst ms |
+|---|---|---|---|---|---|
+| **Final** | 60.0 | 31 | **24** | **32** | **32** |
+| Naive v0 | 17.2 | 31 | 176 | 224 | 224 |
+
+The final build answers every input within about two frames. The naive build is over the 200 ms "poor" threshold.

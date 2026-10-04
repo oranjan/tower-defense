@@ -50,15 +50,18 @@ Start it from the Stress panel (sliders or the S1/S2 presets) or with a URL: `?s
 
 ## Scripts (headless Chrome via `puppeteer-core`)
 
-All three drive your local Chrome headless at 1440×900 against a URL. Run them against a **production build** (`npm run build && npx vite preview --port 4317`) or a deployed URL.
+All of these drive your local Chrome headless at 1440×900 against a URL. Run them against a **production build** (`npm run build && npx vite preview --port 4317`) or a deployed URL.
 
 | Script | What it does |
 |---|---|
 | `npm run report -- <url>` | **Generates every table in NUMBERS.md:** naive ramp (`<url>naive/`); each optimisation switched on in turn at 2000/50/500 and 5000/100/1000; culling at 3× zoom; ablation (all on, one off) at 12000/200/3000; final ceiling ramp. Each row: setup → **2 s warm-up** → `resetStats()` → **5 s window** → `statsRow()`. The warm-up keeps the spawn spike and first GC out of the window. |
 | `npm run memory -- <url> [nopool]` | A scripted player plays all 50 waves fast-forwarded (fixed 1/60 s steps, yielding to the page every 10 s of game time so GC runs normally). Prints heap min/max per 5 waves. |
 | `npm run bench -- <url> E,T,P …` | Quick single-scenario rows for regression checks |
+| `npm run stress-memory -- <url> [E,T,P]` | **50-wave stress run** in real time at 1× (~5 min): counts held at 5000/100/1000 while waves 1→50 advance every 6 s, enemies mortal and replaced on death. Heap + frame stats every 5 s. |
+| `npm run refresh-rate -- <url>` | Drives the real `Loop` with synthetic rAF timestamps at 30/60/75/120/144/165/240 Hz, then checks that the same number of steps takes the same wall-clock time and yields an identical game state. |
+| `npm run interactivity -- <url>` | During the stress test, sends real keys, clicks and wheel input through Chrome and reads the Event Timing API (input → next paint, as in INP) for the final and naive builds. |
 
-The page exposes `game`, `flags`, `cam`, `ui`, `statsRow()` and `resetStats()` on `window` for these scripts. The frozen naive page exposes `game`, `statsRow()` and `resetStats()`.
+The page exposes `game`, `flags`, `cam`, `ui`, `statsRow()`, `resetStats()` and the `Game` / `Loop` classes on `window` for these scripts. The frozen naive page exposes `game`, `statsRow()` and `resetStats()`.
 
 ## Headless vs desktop Chrome
 

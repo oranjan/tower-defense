@@ -53,3 +53,15 @@ A tower keeps its current target while it is alive (checked by `id`, so a recycl
 
 ### 6. Viewport culling
 `Camera.visible()` plus a 40 px margin (largest sprite + glow) gives a world rect. Every draw loop skips entities outside it, so render cost follows what's on screen. Demo: stress 5000/100/1000, zoom in with the mouse wheel, toggle **Viewport culling** and watch `drawn` and `render`.
+
+## References (what each technique is based on)
+
+| Technique here | Source |
+|---|---|
+| Sprite atlas / pre-rendering, batching draw calls, avoiding state changes and `shadowBlur`, layered canvases for a static background | MDN, *Optimizing canvas*: https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API/Tutorial/Optimizing_canvas |
+| Fixed 1/60 s step with an accumulator, capped catch-up to avoid the "spiral of death" | Glenn Fiedler, *Fix Your Timestep!*: https://gafferongames.com/post/fix_your_timestep/ |
+| One loop driving everything; update vs render separation | Robert Nystrom, *Game Programming Patterns: Game Loop*: https://gameprogrammingpatterns.com/game-loop.html |
+| Spatial grid for neighbour queries | *Game Programming Patterns: Spatial Partition*: https://gameprogrammingpatterns.com/spatial-partition.html |
+| Object pools, free lists | *Game Programming Patterns: Object Pool*: https://gameprogrammingpatterns.com/object-pool.html |
+| Measuring interactivity as input → next paint | web.dev, *Interaction to Next Paint (INP)*: https://web.dev/articles/inp |
+| rAF callbacks run at the display's refresh rate, so animation must use elapsed time | MDN, *Window.requestAnimationFrame()*: https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame |

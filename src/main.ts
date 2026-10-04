@@ -245,11 +245,11 @@ window.addEventListener('keydown', (e) => {
 const stressParam = params.get('stress');
 if (stressParam) {
   const [e, t, p] = stressParam.split(',').map(Number);
-  const cfg = { enemies: e || 0, towers: t || 0, projectiles: p || 0 };
+  const cfg = { enemies: e || 0, towers: t || 0, projectiles: p || 0, waves: params.get('waves') === '1' };
   ui.setStressInputs(cfg);
   controls.startStress(cfg);
 }
 
 // Exposed for debugging and scripts/bench.mjs
-Object.assign(window, { game, statsRow: markdownRow, resetStats: () => stats.reset(), flags, cam, ui });
+Object.assign(window, { game, statsRow: markdownRow, resetStats: () => stats.reset(), flags, cam, ui, Game, Loop });
 loop.start();
