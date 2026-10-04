@@ -242,5 +242,6 @@ if (stressParam) {
   controls.startStress(cfg);
 }
 
-(window as unknown as { game: Game }).game = game;
+// Exposed for debugging and scripts/bench.mjs
+Object.assign(window, { game, statsRow: markdownRow });
 loop.start();

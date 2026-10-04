@@ -1,7 +1,7 @@
 # Tower Defense — Build Plan (Cactro assignment)
 
 **Deadline: today, 04/10/2026, 17:00.** Plan written at 13:10 → ~3h50m left, of which ~45 min must be kept for the video + submission.
-Brief: `assignment.png` in this folder. Submit at https://forms.gle/ER387znmXfN4MvzdA
+Brief: [`assignment.png`](assignment.png) (in `docs/`). Submit at https://forms.gle/ER387znmXfN4MvzdA
 
 The grading story is not "did you make a game" — it is **"show the naive version break, show each fix with live before/after numbers, show the final ceiling."** Everything below is organised around producing that evidence.
 

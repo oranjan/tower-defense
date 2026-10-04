@@ -1,6 +1,6 @@
 # Performance numbers
 
-Scenario = enemies / towers / projectiles (E/T/P), held constant by stress mode (enemies wrap around and are immortal, projectiles are topped up). Every run is at 1× speed with a 5 s warm-up; values come from the in-game stats panel ("Copy stats row").
+Scenario = enemies / towers / projectiles (E/T/P), held constant by stress mode (enemies wrap around and are immortal, projectiles are topped up). Every run is at 1× speed with a 5 s warm-up; values come from the in-game stats panel ("Copy stats row"). Full protocol and metric definitions: [docs/performance/measurement.md](docs/performance/measurement.md). What makes v0 slow: [docs/performance/bottlenecks.md](docs/performance/bottlenecks.md).
 
 `≥45 FPS` = % of frames with an interval ≤ 22.2 ms (the requirement is ≥ 95 %). `>33 ms` = % of frames slower than 33 ms (the requirement is < 5 %).
 
