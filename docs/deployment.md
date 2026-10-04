@@ -8,6 +8,8 @@
 | Naive baseline (same deploy) | https://td-final-eight.vercel.app/naive/ | `td-final` | `naive/` folder |
 | Naive baseline (own project) | https://td-naive.vercel.app | `td-naive` (prj_GY8RX26LcivDmV6MgWGIStv2xQeH) | `naive/` folder built standalone |
 
+Source: https://github.com/oranjan/tower-defense (public; `main` + tag `v0-naive`). Vercel projects are not git-connected; deploys are manual static uploads (below).
+
 Note: `td-final.vercel.app` belongs to someone else, which is why Vercel assigned `td-final-eight`. A custom `*.vercel.app` alias set by hand came up behind Vercel deployment protection (302 to login), so it was removed. Use the URLs above.
 
 Handy links for the demo:

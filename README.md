@@ -6,6 +6,7 @@ A browser tower defense game: 50 waves, 4 towers, 5 enemy types. It holds **60 F
 |---|---|
 | **Final** (optimised; toggle each optimisation live) | **https://td-final-eight.vercel.app** |
 | Naive baseline (frozen v0) | https://td-naive.vercel.app · also https://td-final-eight.vercel.app/naive/ |
+| Source | https://github.com/oranjan/tower-defense (tag `v0-naive` = original implementation) |
 
 **Stress test straight from the URL:**
 - `?stress=5000,100,1000` (enemies, towers, projectiles)
