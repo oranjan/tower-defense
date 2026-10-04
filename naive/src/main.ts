@@ -1,25 +1,21 @@
 import { Stats, type StatsSummary } from './bench/stats';
 import { Camera } from './camera';
 import { TILE, TOWERS } from './config';
-import { flagSummary, flags, flagsFromUrl } from './flags';
 import { Game, type StressConfig } from './game';
 import { Loop } from './loop';
 import { Renderer, type Hover } from './render';
 import { UI, type Controls } from './ui';
 import './style.css';
 
-const BUILD = 'v1';
-const params = new URLSearchParams(location.search);
-flagsFromUrl(params);
+const BUILD = 'v0 naive';  // frozen copy of tag v0-naive — do not optimise
 
 const stage = document.getElementById('stage')!;
 const fg = document.getElementById('fg') as HTMLCanvasElement;
-const bg = document.getElementById('bg') as HTMLCanvasElement;
 const statsEl = document.getElementById('stats')!;
 
 const game = new Game();
 const cam = new Camera();
-const renderer = new Renderer(fg, bg, cam);
+const renderer = new Renderer(fg, cam);
 const stats = new Stats();
 const hover: Hover = { col: -1, row: -1, buildKind: -1 };
 
@@ -46,9 +42,6 @@ const controls: Controls = {
   },
   setStress(cfg: StressConfig) {
     game.setStress(cfg);
-    stats.reset();
-  },
-  flagsChanged() {
     stats.reset();
   },
 };
@@ -85,7 +78,7 @@ function updateStatsPanel() {
   stats.summary(summary);
   const s = summary;
   statsEl.textContent =
-    `${BUILD} [${flagSummary()}]\n` +
+    `${BUILD}\n` +
     `FPS now    ${stats.currentFps().toFixed(0)}\n` +
     `FPS avg    ${s.fps.toFixed(1)}  (10 s)\n` +
     `p95 frame  ${s.p95.toFixed(1)} ms\n` +
@@ -95,14 +88,13 @@ function updateStatsPanel() {
     `render     ${s.renderMs.toFixed(2)} ms\n` +
     `heap       ${s.heapMb < 0 ? 'n/a' : s.heapMb.toFixed(1) + ' MB'}\n` +
     `E/T/P      ${game.enemies.length}/${game.towers.length}/${game.projectiles.length}\n` +
-    `particles  ${game.particles.length}\n` +
-    `drawn      ${renderer.drawn}`;
+    `particles  ${game.particles.length}`;
 }
 
 function markdownRow() {
   stats.summary(summary);
   const s = summary;
-  return `| ${BUILD} [${flagSummary()}] | ${game.enemies.length}/${game.towers.length}/${game.projectiles.length} | ${s.fps.toFixed(1)} | ${s.p95.toFixed(1)} | ${s.pctAt45.toFixed(1)} | ${s.pctOver33.toFixed(1)} | ${s.simMs.toFixed(2)} | ${s.renderMs.toFixed(2)} | ${s.heapMb < 0 ? 'n/a' : s.heapMb.toFixed(0)} |`;
+  return `| ${BUILD} | ${game.enemies.length}/${game.towers.length}/${game.projectiles.length} | ${s.fps.toFixed(1)} | ${s.p95.toFixed(1)} | ${s.pctAt45.toFixed(1)} | ${s.pctOver33.toFixed(1)} | ${s.simMs.toFixed(2)} | ${s.renderMs.toFixed(2)} | ${s.heapMb < 0 ? 'n/a' : s.heapMb.toFixed(0)} |`;
 }
 
 const copyBtn = document.createElement('button');
@@ -242,6 +234,7 @@ window.addEventListener('keydown', (e) => {
 
 // ---------- boot ----------
 
+const params = new URLSearchParams(location.search);
 const stressParam = params.get('stress');
 if (stressParam) {
   const [e, t, p] = stressParam.split(',').map(Number);
@@ -251,5 +244,5 @@ if (stressParam) {
 }
 
 // Exposed for debugging and scripts/bench.mjs
-Object.assign(window, { game, statsRow: markdownRow, flags, cam, ui });
+Object.assign(window, { game, statsRow: markdownRow });
 loop.start();

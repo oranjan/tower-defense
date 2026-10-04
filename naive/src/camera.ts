@@ -21,42 +21,16 @@ export class Camera {
     this.clamp();
   }
 
-  private shakeX = 0;
-  private shakeY = 0;
-
-  // Pick this frame's shake offset once so every layer uses the same transform
-  beginFrame() {
-    this.shakeX = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 12 : 0;
-    this.shakeY = this.shake > 0 ? (Math.random() - 0.5) * this.shake * 12 : 0;
-  }
-
   apply(ctx: CanvasRenderingContext2D) {
     const s = this.scale;
     const d = this.dpr;
-    const ox = this.viewW / 2 - this.cx * s + this.shakeX;
-    const oy = this.viewH / 2 - this.cy * s + this.shakeY;
+    let ox = this.viewW / 2 - this.cx * s;
+    let oy = this.viewH / 2 - this.cy * s;
+    if (this.shake > 0) {
+      ox += (Math.random() - 0.5) * this.shake * 12;
+      oy += (Math.random() - 0.5) * this.shake * 12;
+    }
     ctx.setTransform(s * d, 0, 0, s * d, ox * d, oy * d);
-  }
-
-  // Device-pixel offset of world (0,0); device = world * scale * dpr + offset
-  deviceOffset(out: { x: number; y: number }) {
-    const s = this.scale;
-    out.x = (this.viewW / 2 - this.cx * s + this.shakeX) * this.dpr;
-    out.y = (this.viewH / 2 - this.cy * s + this.shakeY) * this.dpr;
-  }
-
-  // True when the transform differs from the one passed in last time (used to redraw the cached background)
-  private last = [NaN, NaN, NaN, NaN, NaN, NaN];
-  changedSince() {
-    const v = this.last;
-    const s = this.scale;
-    if (v[0] === this.cx && v[1] === this.cy && v[2] === s && v[3] === this.viewW && v[4] === this.shakeX && v[5] === this.shakeY) return false;
-    v[0] = this.cx; v[1] = this.cy; v[2] = s; v[3] = this.viewW; v[4] = this.shakeX; v[5] = this.shakeY;
-    return true;
-  }
-
-  invalidate() {
-    this.last[0] = NaN;
   }
 
   screenToWorld(sx: number, sy: number, out: { x: number; y: number }) {

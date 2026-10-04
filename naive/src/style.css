@@ -156,5 +156,3 @@ kbd {
 .card p { color: var(--muted); }
 .card .score { color: var(--text); font-size: 18px; }
 .card .score b { color: var(--accent); }
-.toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0; cursor: pointer; }
-.toggle input { accent-color: var(--accent); }

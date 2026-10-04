@@ -1,11 +1,13 @@
-// NAIVE renderer — the "obvious" approach on purpose:
-//  - one canvas; the whole map is redrawn from scratch every frame
-//  - every enemy/projectile gets save/restore, its own path, shadowBlur glow and fillText
-//  - every entity is drawn, visible or not
+// Renderer. Each optimisation is behind a flag (flags.ts); the naive* methods are the v0 code paths.
+//   useBgCache  → static map lives on #bg and is redrawn only when the camera moves
+//   useSprites  → one drawImage per entity from a pre-rendered atlas; HP bars in two batched paths
+//   useCulling  → entities outside the visible world rect are skipped
 import type { Camera } from './camera';
 import { COLS, ENEMIES, MAX_LEVEL, ROWS, SHIELDED, TILE, TOWERS, WORLD_H, WORLD_W } from './config';
-import { type Game, P_DOT, P_LINE, P_RING, P_TEXT, SHELL } from './game';
+import { flags } from './flags';
+import { type Game, P_DOT, P_LINE, P_RING, P_TEXT, SHELL, type Particle, type Tower } from './game';
 import { BASE_COL, BASE_ROW, PATH, TILE_KIND } from './map';
+import { ATLAS, VAR_FLASH, VAR_NORMAL, VAR_SLOW, bulletSprite, enemySprites, shellSprite, towerSprites, type Sprite } from './sprites';
 
 export interface Hover {
   col: number;
@@ -13,37 +15,82 @@ export interface Hover {
   buildKind: number; // -1 = not building
 }
 
+const CULL_MARGIN = 40; // world px: covers the largest sprite + glow
+
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
+  private bgCtx: CanvasRenderingContext2D;
+  private bgDirty = true; // bg canvas content is stale
+  private view = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  private off = { x: 0, y: 0 };
+  drawn = 0; // entities drawn last frame (shown in the stats panel)
 
-  constructor(private canvas: HTMLCanvasElement, private cam: Camera) {
+  constructor(private canvas: HTMLCanvasElement, private bg: HTMLCanvasElement, private cam: Camera) {
     this.ctx = canvas.getContext('2d')!;
+    this.bgCtx = bg.getContext('2d', { alpha: false })!;
   }
 
   resize(w: number, h: number, dpr: number) {
-    this.canvas.width = Math.round(w * dpr);
-    this.canvas.height = Math.round(h * dpr);
+    for (const c of [this.canvas, this.bg]) {
+      c.width = Math.round(w * dpr);
+      c.height = Math.round(h * dpr);
+    }
+    this.bgDirty = true;
   }
 
-  render(g: Game, hover: Hover, selected: Game['towers'][number] | null) {
+  render(g: Game, hover: Hover, selected: Tower | null) {
     const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#0b0e13';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    this.cam.shake = g.baseHit > 0 ? g.baseHit : 0;
-    this.cam.apply(ctx);
+    const cam = this.cam;
+    cam.shake = g.baseHit > 0 ? g.baseHit : 0;
+    cam.beginFrame();
+    cam.visible(this.view);
+    const v = this.view;
+    v.x0 -= CULL_MARGIN;
+    v.y0 -= CULL_MARGIN;
+    v.x1 += CULL_MARGIN;
+    v.y1 += CULL_MARGIN;
+    this.drawn = 0;
 
-    this.drawMap(ctx, hover.buildKind >= 0);
-    this.drawTowers(ctx, g);
-    this.drawEnemies(ctx, g);
-    this.drawProjectiles(ctx, g);
-    this.drawParticles(ctx, g);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const camMoved = cam.changedSince();
+    if (flags.useBgCache) {
+      // Map lives on its own canvas and is redrawn only when the camera changed
+      if (camMoved || this.bgDirty) {
+        const b = this.bgCtx;
+        b.setTransform(1, 0, 0, 1, 0, 0);
+        b.fillStyle = '#0b0e13';
+        b.fillRect(0, 0, this.bg.width, this.bg.height);
+        cam.apply(b);
+        this.naiveMap(b);
+        this.bgDirty = false;
+      }
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    } else {
+      this.bgDirty = true;
+      ctx.fillStyle = '#0b0e13';
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    cam.apply(ctx);
+    if (!flags.useBgCache) this.naiveMap(ctx);
+    if (hover.buildKind >= 0) this.gridLines(ctx);
+
+    if (flags.useSprites) {
+      this.fastTowers(ctx, g);
+      this.fastEnemies(ctx, g);
+      this.fastProjectiles(ctx, g);
+      this.fastParticles(ctx, g);
+    } else {
+      this.naiveTowers(ctx, g);
+      this.naiveEnemies(ctx, g);
+      this.naiveProjectiles(ctx, g);
+      this.naiveParticles(ctx, g);
+    }
 
     if (selected) this.rangeCircle(ctx, selected.x, selected.y, selected.range, 'rgba(255,255,255,0.08)', 'rgba(255,255,255,0.5)');
     if (hover.buildKind >= 0 && hover.col >= 0) this.drawGhost(ctx, g, hover);
 
     // Screen-space overlays
-    ctx.setTransform(this.cam.dpr, 0, 0, this.cam.dpr, 0, 0);
+    ctx.setTransform(cam.dpr, 0, 0, cam.dpr, 0, 0);
     if (g.bannerTime > 0 && g.phase === 'playing') {
       const a = Math.min(1, g.bannerTime);
       ctx.save();
@@ -53,17 +100,124 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.shadowColor = '#000';
       ctx.shadowBlur = 12;
-      ctx.fillText(`Wave ${g.wave}`, this.cam.viewW / 2, this.cam.viewH * 0.22);
+      ctx.fillText(`Wave ${g.wave}`, cam.viewW / 2, cam.viewH * 0.22);
       if (g.wave % 10 === 0) {
         ctx.font = 'bold 20px system-ui, sans-serif';
         ctx.fillStyle = '#f43f5e';
-        ctx.fillText('BOSS WAVE', this.cam.viewW / 2, this.cam.viewH * 0.22 + 32);
+        ctx.fillText('BOSS WAVE', cam.viewW / 2, cam.viewH * 0.22 + 32);
       }
       ctx.restore();
     }
   }
 
-  private drawMap(ctx: CanvasRenderingContext2D, grid: boolean) {
+  private outside(x: number, y: number) {
+    const v = this.view;
+    return flags.useCulling && (x < v.x0 || x > v.x1 || y < v.y0 || y > v.y1);
+  }
+
+  // ---------- optimised paths ----------
+
+  private blit(ctx: CanvasRenderingContext2D, s: Sprite, x: number, y: number) {
+    ctx.drawImage(ATLAS, s.sx, s.sy, s.sw, s.sw, x - s.h, y - s.h, s.h * 2, s.h * 2);
+  }
+
+  private fastEnemies(ctx: CanvasRenderingContext2D, g: Game) {
+    const list = g.enemies;
+    const t = g.time;
+    // bodies: one drawImage each, all from the same atlas image
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (e.dead || this.outside(e.x, e.y)) continue;
+      const variant = e.flash > 0 ? VAR_FLASH : t < e.slowUntil ? VAR_SLOW : VAR_NORMAL;
+      this.blit(ctx, enemySprites[e.kind][variant], e.x, e.y);
+      this.drawn++;
+    }
+    // HP bars: two batched paths (backgrounds, then fills); skipped when too small to read
+    if (this.cam.scale < 0.5) return;
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.beginPath();
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (e.dead || e.hp >= e.maxHp || this.outside(e.x, e.y)) continue;
+        const r = ENEMIES[e.kind].radius;
+        ctx.rect(e.x - r, e.y - r - 7, pass === 0 ? r * 2 : (r * 2 * e.hp) / e.maxHp, 3);
+      }
+      ctx.fillStyle = pass === 0 ? '#7f1d1d' : '#22c55e';
+      ctx.fill();
+    }
+  }
+
+  private fastProjectiles(ctx: CanvasRenderingContext2D, g: Game) {
+    const list = g.projectiles;
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      if (this.outside(p.x, p.y)) continue;
+      this.blit(ctx, p.kind === SHELL ? shellSprite : bulletSprite, p.x, p.y);
+      this.drawn++;
+    }
+  }
+
+  private fastTowers(ctx: CanvasRenderingContext2D, g: Game) {
+    const towers = g.towers;
+    for (const t of towers) {
+      if (this.outside(t.x, t.y)) continue;
+      this.blit(ctx, towerSprites[t.kind], t.x, t.y);
+      this.drawn++;
+    }
+    // barrels: build each rotation with setTransform instead of save/translate/rotate/restore
+    const k = this.cam.scale * this.cam.dpr;
+    this.cam.deviceOffset(this.off);
+    ctx.fillStyle = '#e5e7eb';
+    ctx.strokeStyle = '#e0f2fe';
+    ctx.lineWidth = 2;
+    for (const t of towers) {
+      if (this.outside(t.x, t.y)) continue;
+      const c = Math.cos(t.angle) * k, s = Math.sin(t.angle) * k;
+      ctx.setTransform(c, s, -s, c, this.off.x + t.x * k, this.off.y + t.y * k);
+      if (t.kind === 0) ctx.fillRect(0, -3, 22, 6);
+      else if (t.kind === 1) ctx.fillRect(0, -6, 18, 12);
+      else if (t.kind === 3) ctx.fillRect(0, -2, 30, 4);
+      else {
+        ctx.beginPath();
+        for (let i = 0; i < 3; i++) {
+          const a = ((i + 1) * Math.PI) / 3;
+          ctx.moveTo(-10 * Math.cos(a), -10 * Math.sin(a));
+          ctx.lineTo(10 * Math.cos(a), 10 * Math.sin(a));
+        }
+        ctx.stroke();
+      }
+    }
+    this.cam.apply(ctx);
+    ctx.fillStyle = '#fde68a';
+    ctx.strokeStyle = '#fde68a';
+    for (const t of towers) {
+      if (this.outside(t.x, t.y)) continue;
+      for (let i = 0; i < t.level; i++) ctx.fillRect(t.x - 18 + i * 8, t.y + 16, 6, 4);
+      if (t.level === MAX_LEVEL) ctx.strokeRect(t.x - 23, t.y - 23, 46, 46);
+    }
+  }
+
+  private fastParticles(ctx: CanvasRenderingContext2D, g: Game) {
+    const list = g.particles;
+    let color = '';
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      if (p.kind !== P_LINE && this.outside(p.x, p.y)) continue;
+      ctx.globalAlpha = p.life / p.maxLife;
+      if (p.kind === P_DOT) {
+        if (p.color !== color) ctx.fillStyle = color = p.color;
+        ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+      } else {
+        this.particleShape(ctx, p);
+        color = '';
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- naive paths (v0) ----------
+
+  private naiveMap(ctx: CanvasRenderingContext2D) {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const k = TILE_KIND[r * COLS + c];
@@ -72,7 +226,6 @@ export class Renderer {
         ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
       }
     }
-    // path centre line
     ctx.save();
     ctx.strokeStyle = 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 34;
@@ -83,22 +236,6 @@ export class Renderer {
     ctx.stroke();
     ctx.restore();
 
-    if (grid) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let c = 0; c <= COLS; c++) {
-        ctx.moveTo(c * TILE, 0);
-        ctx.lineTo(c * TILE, WORLD_H);
-      }
-      for (let r = 0; r <= ROWS; r++) {
-        ctx.moveTo(0, r * TILE);
-        ctx.lineTo(WORLD_W, r * TILE);
-      }
-      ctx.stroke();
-    }
-
-    // base
     const bx = BASE_COL * TILE, by = BASE_ROW * TILE;
     ctx.save();
     ctx.fillStyle = '#475569';
@@ -110,7 +247,6 @@ export class Renderer {
     ctx.fillRect(bx + TILE / 2 + 1, by - 14, 14, 9);
     ctx.restore();
 
-    // spawn marker
     ctx.save();
     ctx.fillStyle = 'rgba(244,63,94,0.5)';
     ctx.beginPath();
@@ -122,8 +258,25 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawTowers(ctx: CanvasRenderingContext2D, g: Game) {
+  private gridLines(ctx: CanvasRenderingContext2D) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = 0; c <= COLS; c++) {
+      ctx.moveTo(c * TILE, 0);
+      ctx.lineTo(c * TILE, WORLD_H);
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      ctx.moveTo(0, r * TILE);
+      ctx.lineTo(WORLD_W, r * TILE);
+    }
+    ctx.stroke();
+  }
+
+  private naiveTowers(ctx: CanvasRenderingContext2D, g: Game) {
     for (const t of g.towers) {
+      if (this.outside(t.x, t.y)) continue;
+      this.drawn++;
       const def = TOWERS[t.kind];
       ctx.save();
       ctx.translate(t.x, t.y);
@@ -167,8 +320,10 @@ export class Renderer {
     }
   }
 
-  private drawEnemies(ctx: CanvasRenderingContext2D, g: Game) {
+  private naiveEnemies(ctx: CanvasRenderingContext2D, g: Game) {
     for (const e of g.enemies) {
+      if (e.dead || this.outside(e.x, e.y)) continue;
+      this.drawn++;
       const d = ENEMIES[e.kind];
       ctx.save();
       ctx.shadowColor = d.color;
@@ -206,8 +361,10 @@ export class Renderer {
     }
   }
 
-  private drawProjectiles(ctx: CanvasRenderingContext2D, g: Game) {
+  private naiveProjectiles(ctx: CanvasRenderingContext2D, g: Game) {
     for (const p of g.projectiles) {
+      if (this.outside(p.x, p.y)) continue;
+      this.drawn++;
       ctx.save();
       ctx.shadowBlur = 6;
       if (p.kind === SHELL) {
@@ -226,36 +383,44 @@ export class Renderer {
     }
   }
 
-  private drawParticles(ctx: CanvasRenderingContext2D, g: Game) {
+  private naiveParticles(ctx: CanvasRenderingContext2D, g: Game) {
     for (const p of g.particles) {
-      const a = p.life / p.maxLife;
+      if (p.kind !== P_LINE && this.outside(p.x, p.y)) continue;
       ctx.save();
-      ctx.globalAlpha = a;
+      ctx.globalAlpha = p.life / p.maxLife;
       if (p.kind === P_DOT) {
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
-      } else if (p.kind === P_RING) {
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * (1 - a * 0.6), 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (p.kind === P_LINE) {
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = p.size;
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x2, p.y2);
-        ctx.stroke();
-      } else if (p.kind === P_TEXT) {
-        ctx.fillStyle = p.color;
-        ctx.font = `bold ${p.size}px system-ui, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.fillText(p.text, p.x, p.y);
+      } else {
+        this.particleShape(ctx, p);
       }
       ctx.restore();
+    }
+  }
+
+  // Rings, sniper tracers and floating text (few per frame in both paths)
+  private particleShape(ctx: CanvasRenderingContext2D, p: Particle) {
+    const a = p.life / p.maxLife;
+    if (p.kind === P_RING) {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (1 - a * 0.6), 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (p.kind === P_LINE) {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.size;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x2, p.y2);
+      ctx.stroke();
+    } else if (p.kind === P_TEXT) {
+      ctx.fillStyle = p.color;
+      ctx.font = `bold ${p.size}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y);
     }
   }
 

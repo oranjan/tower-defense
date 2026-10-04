@@ -1,7 +1,5 @@
-// DOM UI over the canvas. With flags.useBgCache the HUD/panels update at most 10x/s and only touch the DOM
-// when a value changed; with it off they are rebuilt with innerHTML every frame (v0 behaviour).
+// DOM UI over the canvas. NAIVE: the HUD is rebuilt with innerHTML every frame.
 import { ENEMIES, MAX_LEVEL, TOWERS, WAVE_COUNT, towerDmg, towerRange, towerRate } from './config';
-import { FLAG_LABELS, flags, type FlagKey } from './flags';
 import type { Game, StressConfig, Tower } from './game';
 import type { Loop } from './loop';
 
@@ -12,7 +10,6 @@ export interface Controls {
   toMenu(): void;
   startStress(cfg: StressConfig): void;
   setStress(cfg: StressConfig): void;
-  flagsChanged(): void;
 }
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -39,9 +36,6 @@ export class UI {
   private stressInputs: Record<keyof StressConfig, HTMLInputElement> = {} as never;
   private stressVals: Record<keyof StressConfig, HTMLSpanElement> = {} as never;
   private overlayKey = '-'; // never a real key, so the first update always applies
-  private flagBoxes: HTMLInputElement[] = [];
-  private lastUi = 0;
-  private cache: Record<string, string> = {};
 
   constructor(private g: Game, private loop: Loop, private c: Controls) {
     this.buildHud();
@@ -103,35 +97,6 @@ export class UI {
       `<div><span class="dot" style="background:${e.color}"></span>${e.name} <small>${e.hp}hp · ${e.speed}px/s${e.armor ? ' · armor ' + e.armor : ''}</small></div>`).join('');
     side.appendChild(enemies);
 
-    const opt = el('div', 'panel opts');
-    opt.appendChild(el('h3', '', 'Optimisations'));
-    for (const key of Object.keys(flags) as FlagKey[]) {
-      const lab = el('label', 'toggle');
-      const box = el('input');
-      box.type = 'checkbox';
-      box.checked = flags[key];
-      box.dataset.key = key;
-      box.onchange = () => {
-        flags[key] = box.checked;
-        this.c.flagsChanged();
-      };
-      this.flagBoxes.push(box);
-      lab.append(box, document.createTextNode(FLAG_LABELS[key]));
-      opt.appendChild(lab);
-    }
-    const allRow = el('div', 'row');
-    for (const [label, on] of [['All on', true], ['All off (naive)', false]] as const) {
-      const b = el('button', '', label);
-      b.onclick = () => {
-        for (const k of Object.keys(flags) as FlagKey[]) flags[k] = on;
-        this.syncFlags();
-        this.c.flagsChanged();
-      };
-      allRow.appendChild(b);
-    }
-    opt.appendChild(allRow);
-    side.appendChild(opt);
-
     const stress = el('div', 'panel stress');
     stress.appendChild(el('h3', '', 'Stress test'));
     const defs: [keyof StressConfig, string, number, number][] = [
@@ -191,47 +156,22 @@ export class UI {
     }
   }
 
-  syncFlags() {
-    for (const b of this.flagBoxes) b.checked = flags[b.dataset.key as FlagKey];
-  }
-
-  // Write only when changed in optimised mode; always write in naive mode
-  private html(e: HTMLElement, key: string, v: string) {
-    if (flags.useBgCache && this.cache[key] === v) return;
-    this.cache[key] = v;
-    e.innerHTML = v;
-  }
-
-  private text(e: HTMLElement, key: string, v: string) {
-    if (flags.useBgCache && this.cache[key] === v) return;
-    this.cache[key] = v;
-    e.textContent = v;
-  }
-
   togglePause() {
     if (this.g.phase === 'playing') this.loop.paused = !this.loop.paused;
   }
 
-  // Called every frame. Optimised: throttled to 10 Hz + diffed. Naive: full rewrite every frame.
+  // Called every frame (naive: no dirty checking)
   update() {
     const g = this.g;
-    if (flags.useBgCache) {
-      const now = performance.now();
-      if (now - this.lastUi < 100) {
-        this.updateOverlay();
-        return;
-      }
-      this.lastUi = now;
-    }
     const wave = g.stress ? 'stress' : `${g.wave} / ${WAVE_COUNT}`;
-    this.html(this.hudStats, 'hud',
+    this.hudStats.innerHTML =
       `<span class="stat gold">Gold <b>${g.stress ? '∞' : g.gold}</b></span>` +
       `<span class="stat lives">Lives <b>${g.stress ? '∞' : g.lives}</b></span>` +
       `<span class="stat">Wave <b>${wave}</b></span>` +
       `<span class="stat">Score <b>${g.score}</b></span>` +
-      `<span class="stat">Enemies <b>${g.enemies.length}</b></span>`);
+      `<span class="stat">Enemies <b>${g.enemies.length}</b></span>`;
 
-    this.text(this.pauseBtn, 'pause', this.loop.paused ? 'Resume' : 'Pause');
+    this.pauseBtn.textContent = this.loop.paused ? 'Resume' : 'Pause';
     this.speedBtns.forEach((b, i) => b.classList.toggle('on', this.loop.speed === [1, 2, 4][i]));
     this.shopBtns.forEach((b, k) => {
       b.classList.toggle('on', this.c.buildKind === k);
@@ -239,19 +179,19 @@ export class UI {
     });
 
     if (g.stress) {
-      this.text(this.waveBtn, 'wave', 'Stress test running');
+      this.waveBtn.textContent = 'Stress test running';
       this.waveBtn.disabled = true;
     } else if (g.waveActive) {
-      this.text(this.waveBtn, 'wave', `Wave ${g.wave} spawning…`);
+      this.waveBtn.textContent = `Wave ${g.wave} spawning…`;
       this.waveBtn.disabled = true;
     } else if (g.wave >= WAVE_COUNT) {
-      this.text(this.waveBtn, 'wave', 'Final wave — hold on!');
+      this.waveBtn.textContent = 'Final wave — hold on!';
       this.waveBtn.disabled = true;
     } else if (g.countdown > 0) {
-      this.text(this.waveBtn, 'wave', `Wave ${g.wave + 1} in ${Math.ceil(g.countdown)}s — call now +${g.earlyBonus()}g`);
+      this.waveBtn.textContent = `Wave ${g.wave + 1} in ${Math.ceil(g.countdown)}s — call now +${g.earlyBonus()}g`;
       this.waveBtn.disabled = false;
     } else {
-      this.text(this.waveBtn, 'wave', `Start wave ${g.wave + 1}`);
+      this.waveBtn.textContent = `Start wave ${g.wave + 1}`;
       this.waveBtn.disabled = g.phase !== 'playing';
     }
 
@@ -259,18 +199,18 @@ export class UI {
     this.towerPanel.style.display = t ? '' : 'none';
     if (t) {
       const def = TOWERS[t.kind];
-      this.html(this.tpTitle, 'tpTitle', `<span class="sw" style="background:${def.color}"></span>${def.name} <small>level ${t.level + 1}/${MAX_LEVEL + 1}</small>`);
+      this.tpTitle.innerHTML = `<span class="sw" style="background:${def.color}"></span>${def.name} <small>level ${t.level + 1}/${MAX_LEVEL + 1}</small>`;
       const next = t.level < MAX_LEVEL ? t.level + 1 : t.level;
       const arrow = (a: number, b: number, d = 0) => (t.level < MAX_LEVEL ? `${a.toFixed(d)} → <b>${b.toFixed(d)}</b>` : a.toFixed(d));
-      this.html(this.tpStats, 'tpStats',
+      this.tpStats.innerHTML =
         `<div>Damage ${arrow(towerDmg(t.kind, t.level), towerDmg(t.kind, next), 1)}</div>` +
         `<div>Range ${arrow(towerRange(t.kind, t.level), towerRange(t.kind, next))}</div>` +
         `<div>Rate ${arrow(towerRate(t.kind, t.level), towerRate(t.kind, next), 2)}/s</div>` +
-        `<div>Kills ${t.kills}</div>`);
+        `<div>Kills ${t.kills}</div>`;
       const cost = g.nextUpgradeCost(t);
-      this.text(this.upBtn, 'up', cost === Infinity ? 'Max level' : `Upgrade (U) ${cost}g`);
+      this.upBtn.textContent = cost === Infinity ? 'Max level' : `Upgrade (U) ${cost}g`;
       this.upBtn.disabled = cost === Infinity || g.gold < cost;
-      this.text(this.sellBtn, 'sell', `Sell (X) +${g.sellValue(t)}g`);
+      this.sellBtn.textContent = `Sell (X) +${g.sellValue(t)}g`;
     }
 
     this.updateOverlay();

@@ -1,53 +1,34 @@
-// Simulation. Every optimisation sits behind a flag in flags.ts; with all flags off this behaves exactly
-// like the v0 naive build (scan-everything targeting/collision, `new` + `splice` everywhere).
+// NAIVE simulation — written the "obvious" way on purpose (this is the v0 baseline the video breaks):
+//  - entities are class instances in plain arrays, removed with splice
+//  - every tower scans every enemy every tick to find a target
+//  - every projectile scans every enemy every tick for collisions
+//  - `new` for every projectile and particle
 import {
   CANNON, COLS, ENEMIES, FROST, GUN, MAX_LEVEL, ROWS, SELL_RATIO, SNIPER, START_GOLD, START_LIVES, TILE,
   TOWERS, WAVE_COUNT, WAVE_COUNTDOWN, towerDmg, towerRange, towerRate, upgradeCost,
 } from './config';
-import { flags } from './flags';
-import { SpatialGrid } from './grid';
 import { PATH_LEN, TILE_KIND, inBounds, pointAt } from './map';
 import { mulberry32 } from './rng';
 import { buildWave, hpMul, waveBonus, type Spawn } from './waves';
 
 export type Phase = 'menu' | 'playing' | 'victory' | 'gameover';
 
-export const MAX_ENEMIES = 16384;
-export const MAX_PARTICLES = 2500; // pooled mode only
-const MAX_RADIUS = Math.max(...ENEMIES.map((e) => e.radius));
-const REWARD_TEXT = ENEMIES.map((e) => '+' + e.reward);
-
-let nextId = 1;
-
 export class Enemy {
-  id = 0;
-  kind = 0;
   x = 0;
   y = 0;
   s = 0;
-  hp = 0;
-  maxHp = 0;
-  speed = 0;
-  armor = 0;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  armor: number;
   slowUntil = 0;
   slowMul = 1;
   flash = 0;
-  dead = false;
-
-  init(kind: number, hpScale: number, s: number) {
+  constructor(public kind: number, hpScale: number) {
     const d = ENEMIES[kind];
-    this.id = nextId++;
-    this.kind = kind;
     this.hp = this.maxHp = d.hp * hpScale;
     this.speed = d.speed;
     this.armor = d.armor;
-    this.s = s;
-    this.slowUntil = 0;
-    this.slowMul = 1;
-    this.flash = 0;
-    this.dead = false;
-    pointAt(s, this);
-    return this;
   }
 }
 
@@ -56,7 +37,6 @@ export class Tower {
   cooldown = 0;
   angle = 0;
   target: Enemy | null = null;
-  targetId = 0;
   invested: number;
   kills = 0;
   x: number;
@@ -74,64 +54,38 @@ export class Tower {
 export const BULLET = 0, SHELL = 1;
 
 export class Projectile {
-  kind = 0;
-  x = 0;
-  y = 0;
-  vx = 0;
-  vy = 0;
-  dmg = 0;
-  ttl = 0;
-  tx = 0; // shell target point
-  ty = 0;
-  splash = 0;
-  owner: Tower | null = null;
-
-  init(kind: number, x: number, y: number, vx: number, vy: number, dmg: number, ttl: number, tx: number, ty: number, splash: number, owner: Tower | null) {
-    this.kind = kind;
-    this.x = x;
-    this.y = y;
-    this.vx = vx;
-    this.vy = vy;
-    this.dmg = dmg;
-    this.ttl = ttl;
-    this.tx = tx;
-    this.ty = ty;
-    this.splash = splash;
-    this.owner = owner;
-    return this;
-  }
+  constructor(
+    public kind: number,
+    public x: number,
+    public y: number,
+    public vx: number,
+    public vy: number,
+    public dmg: number,
+    public ttl: number,
+    public tx: number, // shell target point
+    public ty: number,
+    public splash: number,
+    public owner: Tower | null,
+  ) {}
 }
 
 export const P_DOT = 0, P_RING = 1, P_TEXT = 2, P_LINE = 3;
 
 export class Particle {
-  kind = 0;
-  x = 0;
-  y = 0;
-  vx = 0;
-  vy = 0;
-  life = 0;
-  maxLife = 0;
-  color = '';
-  size = 0;
-  text = '';
-  x2 = 0;
-  y2 = 0;
-
-  init(kind: number, x: number, y: number, vx: number, vy: number, life: number, color: string, size: number, text = '', x2 = 0, y2 = 0) {
-    this.kind = kind;
-    this.x = x;
-    this.y = y;
-    this.vx = vx;
-    this.vy = vy;
-    this.life = this.maxLife = life;
-    this.color = color;
-    this.size = size;
-    this.text = text;
-    this.x2 = x2;
-    this.y2 = y2;
-    return this;
-  }
+  constructor(
+    public kind: number,
+    public x: number,
+    public y: number,
+    public vx: number,
+    public vy: number,
+    public life: number,
+    public maxLife: number,
+    public color: string,
+    public size: number,
+    public text = '',
+    public x2 = 0,
+    public y2 = 0,
+  ) {}
 }
 
 export interface StressConfig {
@@ -140,38 +94,23 @@ export interface StressConfig {
   projectiles: number;
 }
 
-// Gameplay events for sound/feedback. Plain counters per tick, so the sim never calls out mid-step.
-export const EV_SHOT_GUN = 0, EV_SHOT_CANNON = 1, EV_SHOT_SNIPER = 2, EV_FROST = 3, EV_EXPLODE = 4, EV_HIT = 5,
-  EV_KILL = 6, EV_BOSS_KILL = 7, EV_LIFE_LOST = 8, EV_WAVE = 9, EV_BOSS_SPAWN = 10;
-export const EV_COUNT = 11;
-
 const tmp = { x: 0, y: 0 };
 
 export class Game {
   phase: Phase = 'menu';
+  paused = false;
   gold = START_GOLD;
   lives = START_LIVES;
   score = 0;
   wave = 0; // waves started so far
   time = 0;
   kills = 0;
-  events = new Uint16Array(EV_COUNT);
 
   enemies: Enemy[] = [];
   towers: Tower[] = [];
   projectiles: Projectile[] = [];
   particles: Particle[] = [];
   occupied: (Tower | null)[] = new Array(COLS * ROWS).fill(null);
-
-  // pools (used when flags.usePool)
-  private enemyPool: Enemy[] = [];
-  private projPool: Projectile[] = [];
-  private particlePool: Particle[] = [];
-  private deadCount = 0;
-
-  // spatial index (used when flags.useGrid)
-  private grid = new SpatialGrid<Enemy>(MAX_ENEMIES);
-  private cand: (Enemy | null)[] = new Array(MAX_ENEMIES).fill(null);
 
   spawnQueue: Spawn[] = [];
   spawnIdx = 0;
@@ -186,21 +125,17 @@ export class Game {
 
   reset() {
     this.phase = 'menu';
+    this.paused = false;
     this.gold = START_GOLD;
     this.lives = START_LIVES;
     this.score = 0;
     this.wave = 0;
     this.time = 0;
     this.kills = 0;
-    this.events.fill(0);
-    for (const e of this.enemies) this.enemyPool.push(e);
-    for (const p of this.projectiles) this.projPool.push(p);
-    for (const p of this.particles) this.particlePool.push(p);
-    this.enemies.length = 0;
-    this.projectiles.length = 0;
-    this.particles.length = 0;
+    this.enemies = [];
     this.towers = [];
-    this.deadCount = 0;
+    this.projectiles = [];
+    this.particles = [];
     this.occupied = new Array(COLS * ROWS).fill(null);
     this.spawnQueue = [];
     this.spawnIdx = 0;
@@ -208,7 +143,6 @@ export class Game {
     this.waveActive = false;
     this.countdown = -1;
     this.bannerTime = 0;
-    this.baseHit = 0;
     this.stress = null;
     this.rng = mulberry32(42);
   }
@@ -216,61 +150,6 @@ export class Game {
   start() {
     this.reset();
     this.phase = 'playing';
-  }
-
-  // ---------- allocation helpers ----------
-
-  private newEnemy() {
-    return (flags.usePool && this.enemyPool.pop()) || new Enemy();
-  }
-
-  private newProjectile() {
-    return (flags.usePool && this.projPool.pop()) || new Projectile();
-  }
-
-  private addParticle(kind: number, x: number, y: number, vx: number, vy: number, life: number, color: string, size: number, text = '', x2 = 0, y2 = 0) {
-    if (flags.usePool && this.particles.length >= MAX_PARTICLES) return;
-    const p = (flags.usePool && this.particlePool.pop()) || new Particle();
-    this.particles.push(p.init(kind, x, y, vx, vy, life, color, size, text, x2, y2));
-  }
-
-  // Remove index i: O(1) swap-remove into the pool, or the naive order-preserving splice
-  private removeProjectile(i: number) {
-    const arr = this.projectiles;
-    if (flags.usePool) {
-      const p = arr[i];
-      p.owner = null;
-      arr[i] = arr[arr.length - 1];
-      arr.pop();
-      this.projPool.push(p);
-    } else {
-      arr.splice(i, 1);
-    }
-  }
-
-  private removeParticle(i: number) {
-    const arr = this.particles;
-    if (flags.usePool) {
-      const p = arr[i];
-      arr[i] = arr[arr.length - 1];
-      arr.pop();
-      this.particlePool.push(p);
-    } else {
-      arr.splice(i, 1);
-    }
-  }
-
-  private removeEnemyAt(i: number) {
-    const arr = this.enemies;
-    const e = arr[i];
-    e.dead = true;
-    if (flags.usePool) {
-      arr[i] = arr[arr.length - 1];
-      arr.pop();
-      this.enemyPool.push(e);
-    } else {
-      arr.splice(i, 1);
-    }
   }
 
   // ---------- waves ----------
@@ -295,11 +174,12 @@ export class Game {
     this.waveActive = true;
     this.countdown = -1;
     this.bannerTime = 2.5;
-    this.events[EV_WAVE]++;
   }
 
   spawnEnemy(kind: number, scale: number, s = 0) {
-    const e = this.newEnemy().init(kind, scale, s);
+    const e = new Enemy(kind, scale);
+    e.s = s;
+    pointAt(s, e);
     this.enemies.push(e);
     return e;
   }
@@ -364,11 +244,9 @@ export class Game {
 
     if (!this.stress) this.updateWaves(dt);
     this.updateEnemies(dt);
-    if (flags.useGrid) this.grid.rebuild(this.enemies);
     for (let i = 0; i < this.towers.length; i++) this.updateTower(this.towers[i], dt);
     this.updateProjectiles(dt);
     this.updateParticles(dt);
-    this.sweepDead();
     if (this.stress) this.topUpProjectiles();
 
     if (this.lives <= 0 && !this.stress) {
@@ -387,7 +265,6 @@ export class Game {
       while (this.spawnIdx < this.spawnQueue.length && this.spawnQueue[this.spawnIdx].t <= this.waveTime) {
         const kind = this.spawnQueue[this.spawnIdx].kind;
         this.spawnEnemy(kind, scale);
-        if (kind === 4) this.events[EV_BOSS_SPAWN]++;
         this.spawnIdx++;
       }
       if (this.spawnIdx >= this.spawnQueue.length) {
@@ -418,8 +295,7 @@ export class Game {
         } else {
           this.lives -= ENEMIES[e.kind].lives;
           this.baseHit = 0.3;
-          this.events[EV_LIFE_LOST]++;
-          this.removeEnemyAt(i);
+          this.enemies.splice(i, 1);
           continue;
         }
       }
@@ -427,65 +303,19 @@ export class Game {
     }
   }
 
-  // Enemies killed mid-tick are only flagged in pooled mode; remove them here in one O(n) pass
-  private sweepDead() {
-    if (this.deadCount === 0) return;
-    for (let i = this.enemies.length - 1; i >= 0; i--) if (this.enemies[i].dead) this.removeEnemyAt(i);
-    this.deadCount = 0;
-  }
-
-  // Candidates near (x, y): grid cells overlapping the circle, or every enemy (naive).
-  // Results are read from this.src[0..n).
-  private src: (Enemy | null)[] = this.cand;
-  private candidates(x: number, y: number, r: number): number {
-    if (flags.useGrid) {
-      this.src = this.cand;
-      return this.grid.query(x, y, r, this.cand);
-    }
-    this.src = this.enemies;
-    return this.enemies.length;
-  }
-
-  private findTarget(t: Tower, r2: number): Enemy | null {
-    let best: Enemy | null = null;
-    if (flags.useGrid) {
-      const n = this.grid.query(t.x, t.y, Math.sqrt(r2), this.cand);
-      for (let i = 0; i < n; i++) {
-        const e = this.cand[i]!;
-        if (e.dead) continue;
-        const dx = e.x - t.x, dy = e.y - t.y;
-        if (dx * dx + dy * dy <= r2 && (!best || e.s > best.s)) best = e;
-      }
-    } else {
-      for (const e of this.enemies) {
-        if (e.dead) continue;
-        const dx = e.x - t.x, dy = e.y - t.y;
-        if (dx * dx + dy * dy <= r2 && (!best || e.s > best.s)) best = e;
-      }
-    }
-    return best;
-  }
-
   private updateTower(t: Tower, dt: number) {
     t.cooldown -= dt;
     const range = t.range;
     const r2 = range * range;
 
-    let best: Enemy | null;
-    if (flags.useTargetCache) {
-      // Keep the current target while it's alive and in range; only search when ready to fire
-      best = t.target;
-      if (best) {
-        const dx = best.x - t.x, dy = best.y - t.y;
-        if (best.dead || best.id !== t.targetId || dx * dx + dy * dy > r2) best = null;
-      }
-      if (!best && t.cooldown <= 0) best = this.findTarget(t, r2);
-    } else {
-      best = this.findTarget(t, r2);
+    // Scan every enemy for the one furthest along the path within range
+    let best: Enemy | null = null;
+    for (const e of this.enemies) {
+      const dx = e.x - t.x, dy = e.y - t.y;
+      if (dx * dx + dy * dy <= r2 && (!best || e.s > best.s)) best = e;
     }
     t.target = best;
     if (!best) return;
-    t.targetId = best.id;
     t.angle = Math.atan2(best.y - t.y, best.x - t.x);
     if (t.cooldown > 0) return;
 
@@ -493,12 +323,8 @@ export class Game {
     if (t.kind === FROST) {
       t.cooldown = 1 / t.rate;
       const dmg = t.dmg;
-      const n = this.candidates(t.x, t.y, range);
-      const src = this.src;
-      for (let i = n - 1; i >= 0; i--) {
-        const e = src[i];
-        if (!e) continue;
-        if (e.dead) continue;
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
         const dx = e.x - t.x, dy = e.y - t.y;
         if (dx * dx + dy * dy <= r2) {
           e.slowUntil = this.time + def.slowDur;
@@ -506,8 +332,7 @@ export class Game {
           this.damage(e, dmg, false, t);
         }
       }
-      this.addParticle(P_RING, t.x, t.y, 0, 0, 0.4, def.color, range);
-      this.events[EV_FROST]++;
+      this.particles.push(new Particle(P_RING, t.x, t.y, 0, 0, 0.4, 0.4, def.color, range));
       return;
     }
 
@@ -515,9 +340,8 @@ export class Game {
     t.cooldown = 1 / t.rate;
 
     if (t.kind === SNIPER) {
-      this.addParticle(P_LINE, t.x, t.y, 0, 0, 0.15, def.color, 2, '', best.x, best.y);
+      this.particles.push(new Particle(P_LINE, t.x, t.y, 0, 0, 0.15, 0.15, def.color, 2, '', best.x, best.y));
       this.damage(best, t.dmg, true, t);
-      this.events[EV_SHOT_SNIPER]++;
       return;
     }
 
@@ -530,11 +354,9 @@ export class Game {
     const al = Math.hypot(ax, ay) || 1;
     const vx = (ax / al) * def.projSpeed, vy = (ay / al) * def.projSpeed;
     if (t.kind === GUN) {
-      this.projectiles.push(this.newProjectile().init(BULLET, t.x, t.y, vx, vy, t.dmg, (range * 1.3) / def.projSpeed, 0, 0, 0, t));
-      this.events[EV_SHOT_GUN]++;
+      this.projectiles.push(new Projectile(BULLET, t.x, t.y, vx, vy, t.dmg, (range * 1.3) / def.projSpeed, 0, 0, 0, t));
     } else if (t.kind === CANNON) {
-      this.projectiles.push(this.newProjectile().init(SHELL, t.x, t.y, vx, vy, t.dmg, al / def.projSpeed, tmp.x, tmp.y, def.splash, t));
-      this.events[EV_SHOT_CANNON]++;
+      this.projectiles.push(new Projectile(SHELL, t.x, t.y, vx, vy, t.dmg, al / def.projSpeed, tmp.x, tmp.y, def.splash, t));
     }
   }
 
@@ -548,18 +370,14 @@ export class Game {
       if (p.kind === SHELL) {
         if (p.ttl <= 0) {
           this.explode(p);
-          this.removeProjectile(i);
+          this.projectiles.splice(i, 1);
         }
         continue;
       }
 
-      // Bullet: first enemy it overlaps
+      // Bullet: test against every enemy
       let hit: Enemy | null = null;
-      const n = this.candidates(p.x, p.y, MAX_RADIUS + 3);
-      const src = this.src;
-      for (let k = 0; k < n; k++) {
-        const e = src[k]!;
-        if (e.dead) continue;
+      for (const e of this.enemies) {
         const r = ENEMIES[e.kind].radius + 3;
         const dx = e.x - p.x, dy = e.y - p.y;
         if (dx * dx + dy * dy <= r * r) {
@@ -569,33 +387,27 @@ export class Game {
       }
       if (hit) {
         this.damage(hit, p.dmg, false, p.owner);
-        this.addParticle(P_DOT, p.x, p.y, 0, 0, 0.15, '#fff7c2', 3);
-        this.events[EV_HIT]++;
-        this.removeProjectile(i);
+        this.particles.push(new Particle(P_DOT, p.x, p.y, 0, 0, 0.15, 0.15, '#fff7c2', 3));
+        this.projectiles.splice(i, 1);
       } else if (p.ttl <= 0) {
-        this.removeProjectile(i);
+        this.projectiles.splice(i, 1);
       }
     }
   }
 
   private explode(p: Projectile) {
     const r2 = p.splash * p.splash;
-    const n = this.candidates(p.tx, p.ty, p.splash);
-    const src = this.src;
-    for (let i = n - 1; i >= 0; i--) {
-      const e = src[i];
-      if (!e) continue;
-      if (e.dead) continue;
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
       const dx = e.x - p.tx, dy = e.y - p.ty;
       if (dx * dx + dy * dy <= r2) this.damage(e, p.dmg, false, p.owner);
     }
-    this.addParticle(P_RING, p.tx, p.ty, 0, 0, 0.3, '#fb923c', p.splash);
+    this.particles.push(new Particle(P_RING, p.tx, p.ty, 0, 0, 0.3, 0.3, '#fb923c', p.splash));
     this.burst(p.tx, p.ty, '#fdba74', 8, 140);
-    this.events[EV_EXPLODE]++;
   }
 
   damage(e: Enemy, dmg: number, pierce: boolean, by: Tower | null) {
-    if (e.hp <= 0 || e.dead) return;
+    if (e.hp <= 0) return;
     e.hp -= pierce ? dmg : Math.max(1, dmg - e.armor);
     e.flash = 0.08;
     if (e.hp > 0) return;
@@ -607,16 +419,10 @@ export class Game {
     this.gold += d.reward;
     this.score += d.reward * 10;
     this.kills++;
-    this.events[e.kind === 4 ? EV_BOSS_KILL : EV_KILL]++;
     if (by) by.kills++;
     this.burst(e.x, e.y, d.color, 6, 90);
-    this.floatText(e.x, e.y - 8, REWARD_TEXT[e.kind], '#f5c542');
-    if (flags.usePool) {
-      e.dead = true; // removed in sweepDead() at the end of the tick
-      this.deadCount++;
-    } else {
-      this.removeEnemyAt(this.enemies.indexOf(e));
-    }
+    this.floatText(e.x, e.y - 8, '+' + d.reward, '#f5c542');
+    this.enemies.splice(this.enemies.indexOf(e), 1);
   }
 
   private updateParticles(dt: number) {
@@ -624,7 +430,7 @@ export class Game {
       const p = this.particles[i];
       p.life -= dt;
       if (p.life <= 0) {
-        this.removeParticle(i);
+        this.particles.splice(i, 1);
         continue;
       }
       p.x += p.vx * dt;
@@ -635,12 +441,12 @@ export class Game {
   burst(x: number, y: number, color: string, n: number, speed: number) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, v = speed * (0.3 + Math.random() * 0.7);
-      this.addParticle(P_DOT, x, y, Math.cos(a) * v, Math.sin(a) * v, 0.45, color, 2.5);
+      this.particles.push(new Particle(P_DOT, x, y, Math.cos(a) * v, Math.sin(a) * v, 0.45, 0.45, color, 2.5));
     }
   }
 
   floatText(x: number, y: number, text: string, color: string) {
-    this.addParticle(P_TEXT, x, y, 0, -30, 0.9, color, 12, text);
+    this.particles.push(new Particle(P_TEXT, x, y, 0, -30, 0.9, 0.9, color, 12, text));
   }
 
   // ---------- stress mode ----------
@@ -659,8 +465,8 @@ export class Game {
     if (!this.stress) return;
     this.stress = { ...cfg };
     const scale = hpMul(25);
-    while (this.enemies.length > cfg.enemies) this.removeEnemyAt(this.enemies.length - 1);
-    while (this.enemies.length < cfg.enemies && this.enemies.length < MAX_ENEMIES) {
+    while (this.enemies.length > cfg.enemies) this.enemies.pop();
+    while (this.enemies.length < cfg.enemies) {
       this.spawnEnemy(this.enemies.length % 4, scale, this.rng() * PATH_LEN);
     }
     while (this.towers.length > cfg.towers) {
@@ -683,7 +489,7 @@ export class Game {
         if (t) t.level = this.towers.length % (MAX_LEVEL + 1);
       }
     }
-    while (this.projectiles.length > cfg.projectiles) this.removeProjectile(this.projectiles.length - 1);
+    while (this.projectiles.length > cfg.projectiles) this.projectiles.pop();
   }
 
   private topUpProjectiles() {
@@ -698,7 +504,7 @@ export class Game {
       const tx = e ? e.x : this.rng() * COLS * TILE;
       const ty = e ? e.y : this.rng() * ROWS * TILE;
       const d = Math.hypot(tx - x, ty - y) || 1;
-      this.projectiles.push(this.newProjectile().init(BULLET, x, y, ((tx - x) / d) * 650, ((ty - y) / d) * 650, 8, d / 650 + 0.05, 0, 0, 0, t));
+      this.projectiles.push(new Projectile(BULLET, x, y, ((tx - x) / d) * 650, ((ty - y) / d) * 650, 8, d / 650 + 0.05, 0, 0, 0, t));
     }
   }
 }
