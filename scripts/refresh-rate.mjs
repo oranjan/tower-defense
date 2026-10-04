@@ -53,6 +53,36 @@ const rows = await page.evaluate((STEPS) => {
   window.requestAnimationFrame = realRaf;
   return out;
 }, STEPS);
+// Smoothness: per-frame on-screen movement of one enemy. Without interpolation a 144 Hz display shows it
+// moving in 60 Hz jumps (some frames 0 px, some a full step); with interpolation every frame moves the same.
+const smooth = await page.evaluate(() => {
+  const realRaf = window.requestAnimationFrame;
+  window.requestAnimationFrame = () => 0;
+  const out = [];
+  for (const hz of [60, 120, 144, 240]) {
+    const g = new Game();
+    g.start();
+    g.callNextWave();
+    const raw = [], interp = [];
+    let lastRaw = null, lastInterp = null, e = null;
+    const loop = new Loop({
+      update: (dt) => g.update(dt),
+      render: (alpha) => {
+        if (!e && g.enemies.length) e = g.enemies[0];
+        if (!e || e.dead) return;
+        const ix = e.px + (e.x - e.px) * alpha;
+        if (lastRaw !== null) { raw.push(Math.abs(e.x - lastRaw)); interp.push(Math.abs(ix - lastInterp)); }
+        lastRaw = e.x; lastInterp = ix;
+      },
+    }, { record() {} });
+    let t = 1000;
+    for (let f = 0; f < hz * 4; f++) { loop.frame(t); t += 1000 / hz; } // 4 s
+    const stat = (a) => { const v = a.slice(hz); const m = v.reduce((x, y) => x + y, 0) / v.length; const sd = Math.sqrt(v.reduce((x, y) => x + (y - m) ** 2, 0) / v.length); return { mean: m, cv: m ? sd / m : 0, still: v.filter((d) => d < 1e-6).length / v.length }; };
+    out.push({ hz, raw: stat(raw), interp: stat(interp) });
+  }
+  window.requestAnimationFrame = realRaf;
+  return out;
+});
 await browser.close();
 
 console.log(`### Refresh-rate independence — ${STEPS} fixed steps (${STEPS / 60} s of game time)\n`);
@@ -61,3 +91,8 @@ for (const r of rows) console.log(`| ${r.hz} | ${r.frames} | ${r.wallSeconds} | 
 const keys = ['wave', 'gold', 'score', 'kills', 'lives', 'enemies', 'sumS', 'simTime'];
 const same = rows.every((r) => keys.every((k) => r[k] === rows[0][k]));
 console.log(`\nGame state identical at every refresh rate: **${same ? 'yes' : 'NO'}**`);
+
+console.log('\n### Animation smoothness — one Runner, per-frame on-screen movement\n');
+console.log('| Display Hz | without interpolation: frames with no movement | without: variation (CV) | with interpolation: frames with no movement | with: variation (CV) |\n|---|---|---|---|---|');
+for (const r of smooth) console.log(`| ${r.hz} | ${(r.raw.still * 100).toFixed(0)}% | ${r.raw.cv.toFixed(2)} | ${(r.interp.still * 100).toFixed(0)}% | ${r.interp.cv.toFixed(2)} |`);
+console.log('\nCV = standard deviation / mean of per-frame movement (0 = perfectly even motion).');

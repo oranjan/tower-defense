@@ -13,7 +13,7 @@
 | Heap over a full 50-wave run (normal play) | — | **1.9–5.0 MB, flat** |
 | Heap over a full 50-wave run **at 5,000 / 100 / 1,000** | — | **3.0–6.1 MB, flat**; 100% of frames ≥45 FPS for the whole 5 min |
 | Input → next paint under stress (worst) | 224 ms | **32 ms** |
-| Same game state at 30–240 Hz displays | — | **identical** |
+| Same game state at 30–240 Hz displays | — | **identical**; motion interpolated, so it's even on 120/144/240 Hz |
 
 Live: final https://td-final-eight.vercel.app · naive https://td-naive.vercel.app (also https://td-final-eight.vercel.app/naive/)
 
@@ -166,6 +166,17 @@ With pools the heap stays within about 2–5 MB for the whole run, with no growt
 | 240 | 43,202 | 180.00 | 5 | 4226 | 6440 | 332 | 20 | 28 | 14017.100 |
 
 Game speed and outcome are **identical at every refresh rate**. A faster screen only draws more frames of the same simulation.
+
+**Smooth animation at high refresh rates.** The sim runs at 60 Hz, and the renderer draws enemies and projectiles at a position interpolated between the last two steps (`alpha = accumulator / step`). Per-frame on-screen movement of one Runner:
+
+| Display Hz | No interpolation: frames with no movement | No interpolation: variation (CV) | **Interpolated:** frames with no movement | **Interpolated:** variation (CV) |
+|---|---|---|---|---|
+| 60 | 1% | 0.11 | 0% | 0.00 |
+| 120 | 50% | 1.00 | 0% | 0.00 |
+| 144 | 58% | 1.19 | 0% | 0.00 |
+| 240 | 75% | 1.74 | 0% | 0.00 |
+
+CV is the standard deviation divided by the mean of per-frame movement (0 = perfectly even). Without interpolation a 144 Hz screen shows enemies standing still on 58% of frames, then jumping. With it, every frame moves the same amount. Cost: 2 multiply-adds per entity. After adding it: 5000/100/1000 → 60 FPS, 100% ≥45 FPS, render 1.82 ms; 12000/200/3000 → 60 FPS, 100% ≥45 FPS.
 
 ## 8. Interactivity during the stress scenario
 

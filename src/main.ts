@@ -61,11 +61,11 @@ function clearSelection() {
 const loop = new Loop(
   {
     update: (dt) => game.update(dt),
-    render: () => {
+    render: (alpha) => {
       panByKeys();
       hover.buildKind = controls.buildKind;
       if (controls.selected && !game.towers.includes(controls.selected)) controls.selected = null;
-      renderer.render(game, hover, controls.selected);
+      renderer.render(game, hover, controls.selected, alpha);
       ui.update();
       updateStatsPanel();
     },

@@ -108,3 +108,11 @@ The user then chose to leave sound out. The `Game.events` counters remain, so wi
 
 Spawning, killing and pooling then churn at full load for the whole run. `npm run stress-memory` records heap and frame stats across it.
 **Rejected:** fast-forwarding (it measures heap but not frame quality), and a normal game at 5,000 enemies (the waves would never reach that load without a rebalance).
+
+### D26 — Render interpolation for smooth motion
+**Why:** the sim runs in fixed 60 Hz steps (D4), so on a 120/144/240 Hz display an entity only moves every 2nd–4th frame. Measured: at 144 Hz, 58% of frames show no movement, then a jump. Enemies and projectiles now keep their previous-step position (`px, py`). The renderer draws at `prev + (cur − prev) × alpha`, where `alpha = accumulator / STEP` comes from the loop. The result is 0% still frames and perfectly even per-frame movement at every rate (NUMBERS.md §7).
+**Details:**
+- Wrap-around in stress mode resets `px/py` so nothing streaks across the map.
+- When the game isn't running (game over, victory), `alpha = 1`, so frozen entities don't jitter.
+- The simulation is untouched, so determinism across refresh rates still holds.
+**Rejected:** running the sim at the display rate (breaks D4 determinism); extrapolation (overshoots when enemies turn corners or die).

@@ -2,6 +2,8 @@
 //   useBgCache  → static map lives on #bg and is redrawn only when the camera moves
 //   useSprites  → one drawImage per entity from a pre-rendered atlas; HP bars in two batched paths
 //   useCulling  → entities outside the visible world rect are skipped
+// Enemies and projectiles are drawn at an interpolated position between the last two simulation steps
+// (alpha from the loop), so motion is smooth on 120/144 Hz displays even though the sim runs at 60 Hz.
 import type { Camera } from './camera';
 import { COLS, ENEMIES, MAX_LEVEL, ROWS, SHIELDED, TILE, TOWERS, WORLD_H, WORLD_W } from './config';
 import { flags } from './flags';
@@ -24,6 +26,7 @@ export class Renderer {
   private view = { x0: 0, y0: 0, x1: 0, y1: 0 };
   private off = { x: 0, y: 0 };
   drawn = 0; // entities drawn last frame (shown in the stats panel)
+  private alpha = 1;
 
   constructor(private canvas: HTMLCanvasElement, private bg: HTMLCanvasElement, private cam: Camera) {
     this.ctx = canvas.getContext('2d')!;
@@ -38,8 +41,9 @@ export class Renderer {
     this.bgDirty = true;
   }
 
-  render(g: Game, hover: Hover, selected: Tower | null) {
+  render(g: Game, hover: Hover, selected: Tower | null, alpha = 1) {
     const ctx = this.ctx;
+    this.alpha = g.phase === 'playing' ? alpha : 1; // sim frozen → draw the latest step as is
     const cam = this.cam;
     cam.shake = g.baseHit > 0 ? g.baseHit : 0;
     cam.beginFrame();
@@ -124,12 +128,14 @@ export class Renderer {
   private fastEnemies(ctx: CanvasRenderingContext2D, g: Game) {
     const list = g.enemies;
     const t = g.time;
+    const a = this.alpha;
     // bodies: one drawImage each, all from the same atlas image
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
-      if (e.dead || this.outside(e.x, e.y)) continue;
+      const x = e.px + (e.x - e.px) * a, y = e.py + (e.y - e.py) * a;
+      if (e.dead || this.outside(x, y)) continue;
       const variant = e.flash > 0 ? VAR_FLASH : t < e.slowUntil ? VAR_SLOW : VAR_NORMAL;
-      this.blit(ctx, enemySprites[e.kind][variant], e.x, e.y);
+      this.blit(ctx, enemySprites[e.kind][variant], x, y);
       this.drawn++;
     }
     // HP bars: two batched paths (backgrounds, then fills); skipped when too small to read
@@ -138,9 +144,11 @@ export class Renderer {
       ctx.beginPath();
       for (let i = 0; i < list.length; i++) {
         const e = list[i];
-        if (e.dead || e.hp >= e.maxHp || this.outside(e.x, e.y)) continue;
+        if (e.dead || e.hp >= e.maxHp) continue;
+        const x = e.px + (e.x - e.px) * a, y = e.py + (e.y - e.py) * a;
+        if (this.outside(x, y)) continue;
         const r = ENEMIES[e.kind].radius;
-        ctx.rect(e.x - r, e.y - r - 7, pass === 0 ? r * 2 : (r * 2 * e.hp) / e.maxHp, 3);
+        ctx.rect(x - r, y - r - 7, pass === 0 ? r * 2 : (r * 2 * e.hp) / e.maxHp, 3);
       }
       ctx.fillStyle = pass === 0 ? '#7f1d1d' : '#22c55e';
       ctx.fill();
@@ -149,10 +157,12 @@ export class Renderer {
 
   private fastProjectiles(ctx: CanvasRenderingContext2D, g: Game) {
     const list = g.projectiles;
+    const a = this.alpha;
     for (let i = 0; i < list.length; i++) {
       const p = list[i];
-      if (this.outside(p.x, p.y)) continue;
-      this.blit(ctx, p.kind === SHELL ? shellSprite : bulletSprite, p.x, p.y);
+      const x = p.px + (p.x - p.px) * a, y = p.py + (p.y - p.py) * a;
+      if (this.outside(x, y)) continue;
+      this.blit(ctx, p.kind === SHELL ? shellSprite : bulletSprite, x, y);
       this.drawn++;
     }
   }
@@ -321,8 +331,10 @@ export class Renderer {
   }
 
   private naiveEnemies(ctx: CanvasRenderingContext2D, g: Game) {
+    const a = this.alpha;
     for (const e of g.enemies) {
-      if (e.dead || this.outside(e.x, e.y)) continue;
+      const x = e.px + (e.x - e.px) * a, y = e.py + (e.y - e.py) * a;
+      if (e.dead || this.outside(x, y)) continue;
       this.drawn++;
       const d = ENEMIES[e.kind];
       ctx.save();
@@ -330,7 +342,7 @@ export class Renderer {
       ctx.shadowBlur = 8;
       ctx.fillStyle = e.flash > 0 ? '#ffffff' : d.color;
       ctx.beginPath();
-      ctx.arc(e.x, e.y, d.radius, 0, Math.PI * 2);
+      ctx.arc(x, y, d.radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
       if (e.kind === SHIELDED || e.armor > 0) {
@@ -342,28 +354,30 @@ export class Renderer {
         ctx.strokeStyle = '#7dd3fc';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, d.radius + 3, 0, Math.PI * 2);
+        ctx.arc(x, y, d.radius + 3, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.fillStyle = '#0b0e13';
       ctx.font = `bold ${Math.round(d.radius)}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(d.name[0], e.x, e.y + 1);
+      ctx.fillText(d.name[0], x, y + 1);
       if (e.hp < e.maxHp) {
         const w = d.radius * 2;
         ctx.fillStyle = '#7f1d1d';
-        ctx.fillRect(e.x - w / 2, e.y - d.radius - 7, w, 3);
+        ctx.fillRect(x - w / 2, y - d.radius - 7, w, 3);
         ctx.fillStyle = '#22c55e';
-        ctx.fillRect(e.x - w / 2, e.y - d.radius - 7, (w * e.hp) / e.maxHp, 3);
+        ctx.fillRect(x - w / 2, y - d.radius - 7, (w * e.hp) / e.maxHp, 3);
       }
       ctx.restore();
     }
   }
 
   private naiveProjectiles(ctx: CanvasRenderingContext2D, g: Game) {
+    const a = this.alpha;
     for (const p of g.projectiles) {
-      if (this.outside(p.x, p.y)) continue;
+      const x = p.px + (p.x - p.px) * a, y = p.py + (p.y - p.py) * a;
+      if (this.outside(x, y)) continue;
       this.drawn++;
       ctx.save();
       ctx.shadowBlur = 6;
@@ -371,12 +385,12 @@ export class Renderer {
         ctx.shadowColor = '#f97316';
         ctx.fillStyle = '#292524';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
       } else {
         ctx.shadowColor = '#fde68a';
         ctx.fillStyle = '#fef3c7';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
       }
       ctx.fill();
       ctx.restore();

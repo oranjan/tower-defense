@@ -25,6 +25,8 @@ export class Enemy {
   kind = 0;
   x = 0;
   y = 0;
+  px = 0; // position at the previous step (renderer interpolates px→x)
+  py = 0;
   s = 0;
   hp = 0;
   maxHp = 0;
@@ -48,6 +50,8 @@ export class Enemy {
     this.flash = 0;
     this.dead = false;
     pointAt(s, this);
+    this.px = this.x;
+    this.py = this.y;
     return this;
   }
 }
@@ -78,6 +82,8 @@ export class Projectile {
   kind = 0;
   x = 0;
   y = 0;
+  px = 0;
+  py = 0;
   vx = 0;
   vy = 0;
   dmg = 0;
@@ -89,8 +95,8 @@ export class Projectile {
 
   init(kind: number, x: number, y: number, vx: number, vy: number, dmg: number, ttl: number, tx: number, ty: number, splash: number, owner: Tower | null) {
     this.kind = kind;
-    this.x = x;
-    this.y = y;
+    this.x = this.px = x;
+    this.y = this.py = y;
     this.vx = vx;
     this.vy = vy;
     this.dmg = dmg;
@@ -428,11 +434,17 @@ export class Game {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
       const mul = this.time < e.slowUntil ? e.slowMul : 1;
+      e.px = e.x;
+      e.py = e.y;
       e.s += e.speed * mul * dt;
       if (e.flash > 0) e.flash -= dt;
       if (e.s >= PATH_LEN) {
         if (this.stress) {
           e.s -= PATH_LEN;
+          pointAt(e.s, e);
+          e.px = e.x; // teleport back to the start: don't interpolate across the map
+          e.py = e.y;
+          continue;
         } else {
           this.lives -= ENEMIES[e.kind].lives;
           this.baseHit = 0.3;
@@ -559,6 +571,8 @@ export class Game {
   private updateProjectiles(dt: number) {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
+      p.px = p.x;
+      p.py = p.y;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.ttl -= dt;

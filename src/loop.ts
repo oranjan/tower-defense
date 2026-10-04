@@ -9,7 +9,7 @@ const MAX_STEPS = 8; // 4x speed on a 30 Hz frame; beyond this we drop time inst
 
 export interface LoopCallbacks {
   update(dt: number): void;
-  render(): void;
+  render(alpha: number): void; // alpha = how far we are between the last step and the next (0..1)
 }
 
 export class Loop {
@@ -39,7 +39,7 @@ export class Loop {
     }
     if (steps === MAX_STEPS) this.acc = 0;
     const t1 = performance.now();
-    this.cb.render();
+    this.cb.render(this.acc / STEP);
     const t2 = performance.now();
 
     this.stats.record(interval, t1 - t0, t2 - t1);
