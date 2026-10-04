@@ -23,7 +23,7 @@ The grading is less about having a game than about **showing the naive build bre
 | [docs/performance/optimizations.md](docs/performance/optimizations.md) | What each optimisation does, its flag and its measured effect |
 | [NUMBERS.md](NUMBERS.md) | The before/after table. **Required by the brief, must stay at repo root** |
 | [docs/deployment.md](docs/deployment.md) | Vercel projects, URLs, deploy commands, CLI workaround |
-| [docs/video-script.md](docs/video-script.md) | The demo video script and its mandatory beats |
+| `docs/video-script.md` (local only, gitignored) | The demo video script and its mandatory beats |
 
 ## Commands
 
